@@ -1,0 +1,11 @@
+customer_id,name,email,age,phone,status,created_date,revenue
+1,John Doe,john.doe@example.com,30,+1-555-123-4567,active,2024-01-15 10:30:00,1500.50
+2,Jane Smith,jane.smith@example.com,25,+1-555-234-5678,active,2024-01-16 14:20:00,2200.75
+3,Bob Johnson,bob.johnson@example.com,35,+1-555-345-6789,inactive,2024-01-17 09:15:00,800.25
+4,Alice Brown,alice.brown@example.com,28,+1-555-456-7890,pending,2024-01-18 16:45:00,3200.00
+5,Charlie Wilson,charlie.wilson@example.com,32,+1-555-567-8901,active,2024-01-19 11:30:00,1800.90
+6,Diana Davis,diana.davis@example.com,29,+1-555-678-9012,active,2024-01-20 13:20:00,2700.30
+7,Edward Miller,edward.miller@example.com,41,+1-555-789-0123,suspended,2024-01-21 08:45:00,950.60
+8,Fiona Garcia,fiona.garcia@example.com,26,+1-555-890-1234,active,2024-01-22 15:10:00,2100.40
+9,George Martinez,george.martinez@example.com,33,+1-555-901-2345,active,2024-01-23 12:00:00,1600.80
+10,Helen Taylor,helen.taylor@example.com,27,+1-555-012-3456,pending,2024-01-24 17:30:00,2900.20

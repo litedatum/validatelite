@@ -1,0 +1,41 @@
+# Testing framework
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.0
+pytest-html>=4.1.0
+
+# Code formatting and quality
+black>=24.2.0
+isort>=5.13.0
+flake8>=7.0.0
+mypy>=1.8.0
+pylint>=2.17.0
+
+# Pre-commit hooks
+pre-commit>=3.6.0
+
+# Security and code analysis
+bandit>=1.7.5
+safety>=2.3.5
+
+# Property-based testing
+hypothesis>=6.88.0
+
+# Excel support for testing
+openpyxl>=3.1.0
+
+# Type stubs for better type checking
+pandas-stubs>=2.2.0
+types-psutil>=6.9.0
+types-python-dateutil>=2.8.19
+types-pytz>=2023.3.1
+types-PyYAML>=6.0.12
+types-requests>=2.31.0
+types-setuptools>=68.1.0
+types-six>=1.16.21
+types-toml>=0.10.8
+types-SQLAlchemy>=1.4.0
+
+# System monitoring for tests
+psutil>=5.9.0 

@@ -1,0 +1,324 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'core/**'
+      - 'cli/**'
+      - 'shared/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'requirements*.txt'
+      - 'setup.py'
+      - 'pyproject.toml'
+      - '.github/workflows/ci-cd.yml'
+      - '!docs/**'
+      - '!*.md'
+      - '!LICENSE'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'core/**'
+      - 'cli/**'
+      - 'shared/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'requirements*.txt'
+      - 'setup.py'
+      - 'pyproject.toml'
+      - '.github/workflows/ci-cd.yml'
+      - '!docs/**'
+      - '!*.md'
+      - '!LICENSE'
+  release:
+    types: [published]
+
+env:
+  PYTHON_VERSION: "3.11"
+  # Database URLs for testing (using environment variables for security)
+  MYSQL_DB_URL: ${{ secrets.MYSQL_DB_URL || 'mysql://root:test_password@localhost:3306/test_db' }}
+  POSTGRESQL_DB_URL: ${{ secrets.POSTGRESQL_DB_URL || 'postgresql://postgres:test_password@localhost:5432/test_db' }}
+
+jobs:
+  pre-commit:
+    name: Pre-commit Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pre-commit
+
+      - name: Run pre-commit
+        run: |
+          pre-commit run --all-files
+
+  test:
+    name: Test with Both Databases
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test_password
+          MYSQL_DATABASE: test_db
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y default-libmysqlclient-dev libpq-dev build-essential
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Wait for databases to be ready
+        run: |
+          while ! mysqladmin ping -h"localhost" -P"3306" -u"root" -p"test_password" --silent; do
+            sleep 1
+          done
+          while ! pg_isready -h localhost -p 5432 -U postgres; do
+            sleep 1
+          done
+
+      - name: Generate test data
+        run: |
+          python scripts/sql/generate_test_data.py
+
+      - name: Run unit tests
+        run: |
+          pytest tests/unit/ -v --cov=core --cov=shared --cov-report=xml --cov-report=html
+
+      - name: Run integration tests
+        run: |
+          pytest tests/integration/ -v --cov=core --cov=shared --cov-report=xml --cov-report=html
+
+      - name: Run E2E tests
+        run: |
+          pytest tests/e2e/ -v --cov=core --cov=shared --cov-report=xml --cov-report=html
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: both-databases
+          name: both-databases-coverage
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results
+          path: |
+            htmlcov/
+            coverage.xml
+            .pytest_cache/
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-security-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-security-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit safety
+
+      - name: Run Bandit security scan
+        run: |
+          bandit -r core/ shared/ cli/ -f json -o bandit-report.json || true
+
+      - name: Run Safety check
+        run: |
+          safety check --json --output safety-report.json || true
+
+      - name: Upload security reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-reports
+          path: |
+            bandit-report.json
+            safety-report.json
+
+  build:
+    name: Build Package
+    needs: [pre-commit, test, security-scan]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-build-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-build-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install build twine
+
+      - name: Build package
+        run: |
+          python -m build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: dist
+          path: dist/
+
+      - name: Test package installation
+        run: |
+          pip install dist/*.whl
+
+  release:
+    name: Release to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release' && github.event.action == 'published'
+    environment: pypi-publish
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: dist
+          path: dist/
+
+      - name: Deploy to PyPI
+        run: |
+          echo "Deploying to PyPI using Trusted Publisher..."
+          twine upload dist/*
+
+  auto-release:
+    name: Auto Release to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') && github.event_name == 'push'
+    environment: pypi-publish
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: dist
+          path: dist/
+
+      - name: Deploy to PyPI
+        run: |
+          echo "Deploying to PyPI using Trusted Publisher..."
+          twine upload dist/*
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Release ${{ github.ref_name }}
+          body: |
+            ## What's Changed
+
+            This release includes:
+            - Bug fixes and improvements
+            - Performance optimizations
+            - New features
+
+            ## Installation
+
+            ```bash
+            pip install validatelite==${{ github.ref_name }}
+            ```
+
+            ## Changelog
+
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for detailed changes.
+          draft: false
+          prerelease: false

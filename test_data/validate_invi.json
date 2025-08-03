@@ -1,0 +1,17 @@
+{
+  "rules": [
+    {
+      "id": "rule_unique_email",
+      "type": "UNIQUE",
+      "column": "email",
+      "message": "Email must be unique"
+    },
+    {
+      "id": "rule_email_format",
+      "type": "REGEX",
+      "column": "email",
+      "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
+      "message": "Email format is invalid"
+    }
+  ]
+}

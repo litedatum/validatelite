@@ -1,0 +1,24 @@
+# CLI Application Configuration
+
+# Enable debug mode for verbose error output
+debug_mode = false
+
+# Number of records to sample for analysis
+default_sample_size = 10000
+
+# Maximum file size in MB to load into memory
+max_file_size_mb = 100
+
+# Timeout for database queries initiated by the CLI
+query_timeout = 300
+
+# Database Connection Settings
+[database]
+# Database connection URL (e.g., 'sqlite:///temp.db')
+url = ""
+
+# Database connection timeout in seconds
+connect_timeout = 30
+
+# Log all SQL queries issued to the database
+echo_queries = false

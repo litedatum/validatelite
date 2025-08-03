@@ -1,0 +1,78 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+backup/
+
+# Virtual Environment
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.nox/
+.hypothesis/
+
+# Logs
+*.log
+logs/
+
+# Configuration - Ignore local config files, commit examples
+config/*.toml
+
+# Database
+*.db
+*.sqlite3
+
+# Documentation
+docs/_build/
+site/
+
+# Distribution
+*.tar.gz
+*.zip
+
+# Local development
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Streamlit
+.streamlit/
+
+# Pre-commit
+.pre-commit-config.yaml
+
+# Cursor
+.cursor/

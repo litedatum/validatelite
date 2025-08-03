@@ -1,0 +1,74 @@
+include README.md
+include LICENSE
+include SECURITY.md
+include CONTRIBUTING.md
+include CODE_OF_CONDUCT.md
+include CHANGELOG.md
+include requirements.txt
+include requirements-dev.txt
+include pyproject.toml
+include setup.cfg
+include pytest.ini
+include mypy.ini
+include .pre-commit-config.yaml
+include .editorconfig
+
+# Configuration files
+recursive-include config *.toml.example
+recursive-include config *.example
+
+# Documentation
+recursive-include docs *.md
+recursive-include docs *.rst
+
+# Examples
+recursive-include examples *.py
+recursive-include examples *.json
+recursive-include examples *.csv
+recursive-include examples *.xlsx
+
+# Test data
+recursive-include test_data *.json
+recursive-include test_data *.csv
+recursive-include test_data *.xlsx
+
+# Scripts
+recursive-include scripts *.py
+recursive-include scripts *.sql
+recursive-include scripts *.sh
+
+# GitHub workflows
+recursive-include .github *.yml
+recursive-include .github *.yaml
+
+# Docker files
+include Dockerfile
+include docker-compose*.yml
+include .dockerignore
+
+# Exclude development and test files
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude .pytest_cache
+global-exclude .coverage
+global-exclude htmlcov
+global-exclude .mypy_cache
+global-exclude .hypothesis
+global-exclude .tox
+global-exclude .venv
+global-exclude venv
+global-exclude env
+global-exclude .env
+global-exclude .env.*
+global-exclude *.log
+global-exclude logs
+global-exclude temp
+global-exclude build
+global-exclude dist
+global-exclude *.egg-info
+global-exclude .git
+global-exclude .idea
+global-exclude .vscode
+global-exclude .DS_Store
+global-exclude *.swp
+global-exclude *.swo

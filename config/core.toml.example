@@ -1,0 +1,22 @@
+# Core Engine Configuration
+
+# Default timeout for rule execution in seconds
+execution_timeout = 300
+
+# Threshold for large table optimizations (records)
+table_size_threshold = 10000
+
+# Minimum number of rules required for merge optimization
+rule_count_threshold = 2
+
+# Maximum number of rules to merge in a single SQL query
+max_rules_per_merge = 10
+
+# Enable rule merging for optimized execution
+merge_execution_enabled = true
+
+# Enable performance monitoring for the rule engine
+monitoring_enabled = false
+
+# Rule types that should always be executed independently
+independent_rule_types = ["UNIQUE", "CUSTOM_SQL", "FOREIGN_KEY"]

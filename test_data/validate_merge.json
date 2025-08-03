@@ -1,0 +1,55 @@
+{
+  "rules": [
+    {
+      "id": "rule_unique_email",
+      "type": "UNIQUE",
+      "column": "email",
+      "message": "Email must be unique"
+    },
+    {
+        "id": "rule_age_range",
+        "type": "RANGE",
+        "column": "age",
+        "min": 0,
+        "max": 120,
+        "message": "Age must be between 0 and 120"
+    },
+    {
+      "id": "rule_not_null_email",
+      "type": "NOT_NULL",
+      "column": "email",
+      "message": "Email cannot be null"
+    },
+    {
+      "id": "rule_email_format",
+      "type": "REGEX",
+      "column": "email",
+      "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
+      "message": "Email format is invalid"
+    },
+    {
+      "id": "rule_not_null_name",
+      "type": "NOT_NULL",
+      "column": "name",
+      "message": "Name cannot be null"
+    },
+    {
+      "id": "rule_name_length",
+      "type": "LENGTH",
+      "column": "name",
+      "min": 2,
+      "max": 50,
+      "message": "Name length should be between 2 and 50 characters"
+    },
+    {
+      "id": "rule_gender_enum",
+      "type": "ENUM",
+      "column": "gender",
+      "values": [
+        0,
+        1
+      ],
+      "message": "Gender must be 0 (female), 1 (male)"
+    }
+  ]
+}

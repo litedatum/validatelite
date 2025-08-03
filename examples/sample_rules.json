@@ -1,0 +1,103 @@
+{
+  "rules": [
+    {
+      "name": "customer_id_not_null",
+      "type": "NOT_NULL",
+      "column": "customer_id",
+      "description": "Customer ID must not be null",
+      "severity": "ERROR"
+    },
+    {
+      "name": "customer_id_unique",
+      "type": "UNIQUE",
+      "column": "customer_id",
+      "description": "Customer ID must be unique",
+      "severity": "ERROR"
+    },
+    {
+      "name": "email_format",
+      "type": "REGEX",
+      "column": "email",
+      "parameters": {
+        "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+      },
+      "description": "Email must be in valid format",
+      "severity": "WARNING"
+    },
+    {
+      "name": "email_unique",
+      "type": "UNIQUE",
+      "column": "email",
+      "description": "Email addresses must be unique",
+      "severity": "ERROR"
+    },
+    {
+      "name": "age_range",
+      "type": "RANGE",
+      "column": "age",
+      "parameters": {
+        "min_value": 0,
+        "max_value": 120
+      },
+      "description": "Age must be between 0 and 120",
+      "severity": "WARNING"
+    },
+    {
+      "name": "phone_format",
+      "type": "REGEX",
+      "column": "phone",
+      "parameters": {
+        "pattern": "^\\+?[\\d\\s\\-\\(\\)]{10,}$"
+      },
+      "description": "Phone number must be in valid format",
+      "severity": "WARNING"
+    },
+    {
+      "name": "name_length",
+      "type": "LENGTH",
+      "column": "name",
+      "parameters": {
+        "min_length": 2,
+        "max_length": 100
+      },
+      "description": "Name must be between 2 and 100 characters",
+      "severity": "WARNING"
+    },
+    {
+      "name": "status_valid",
+      "type": "ENUM",
+      "column": "status",
+      "parameters": {
+        "allowed_values": ["active", "inactive", "pending", "suspended"]
+      },
+      "description": "Status must be one of the allowed values",
+      "severity": "ERROR"
+    },
+    {
+      "name": "created_date_format",
+      "type": "DATE_FORMAT",
+      "column": "created_date",
+      "parameters": {
+        "format": "%Y-%m-%d %H:%M:%S"
+      },
+      "description": "Created date must be in YYYY-MM-DD HH:MM:SS format",
+      "severity": "WARNING"
+    },
+    {
+      "name": "revenue_positive",
+      "type": "RANGE",
+      "column": "revenue",
+      "parameters": {
+        "min_value": 0.01
+      },
+      "description": "Revenue must be positive",
+      "severity": "ERROR"
+    }
+  ],
+  "metadata": {
+    "version": "1.0",
+    "description": "Sample validation rules for customer data",
+    "created_by": "ValidateLite Examples",
+    "created_date": "2024-01-01"
+  }
+}
