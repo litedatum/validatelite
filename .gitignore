@@ -72,7 +72,7 @@ site/
 .streamlit/
 
 # Pre-commit
-.pre-commit-config.yaml
+# .pre-commit-config.yaml  # This file should be committed
 
 # Cursor
 .cursor/
