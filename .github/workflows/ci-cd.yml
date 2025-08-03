@@ -36,9 +36,6 @@ on:
 
 env:
   PYTHON_VERSION: "3.11"
-  # Database URLs for testing (using environment variables for security)
-  MYSQL_DB_URL: ${{ secrets.MYSQL_DB_URL }}
-  POSTGRESQL_DB_URL: ${{ secrets.POSTGRESQL_DB_URL }}
 
 jobs:
   pre-commit:
@@ -77,6 +74,10 @@ jobs:
   test:
     name: Test with Both Databases
     runs-on: ubuntu-latest
+    env:
+      # Database URLs for testing (using environment variables for security)
+      MYSQL_DB_URL: ${{ secrets.MYSQL_DB_URL }}
+      POSTGRESQL_DB_URL: ${{ secrets.POSTGRESQL_DB_URL }}
     services:
       mysql:
         image: mysql:8.0
