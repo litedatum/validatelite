@@ -31,7 +31,7 @@ check_docker() {
 check_port() {
     local port=$1
     local service=$2
-    
+
     if lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1; then
         echo -e "${YELLOW}Warning: Port $port is already in use. $service might not start properly.${NC}"
         read -p "Do you want to continue anyway? (y/N): " -n 1 -r
@@ -45,11 +45,11 @@ check_port() {
 # Function to start MySQL
 start_mysql() {
     echo -e "${GREEN}Starting MySQL container...${NC}"
-    
+
     # Stop existing container if running
     docker stop validatelite-mysql 2>/dev/null || true
     docker rm validatelite-mysql 2>/dev/null || true
-    
+
     # Start new container
     docker run -d \
         --name validatelite-mysql \
@@ -58,18 +58,18 @@ start_mysql() {
         -p "$MYSQL_PORT:3306" \
         mysql:8.0 \
         --default-authentication-plugin=mysql_native_password
-    
+
     echo -e "${GREEN}MySQL container started on port $MYSQL_PORT${NC}"
 }
 
 # Function to start PostgreSQL
 start_postgres() {
     echo -e "${GREEN}Starting PostgreSQL container...${NC}"
-    
+
     # Stop existing container if running
     docker stop validatelite-postgres 2>/dev/null || true
     docker rm validatelite-postgres 2>/dev/null || true
-    
+
     # Start new container
     docker run -d \
         --name validatelite-postgres \
@@ -77,7 +77,7 @@ start_postgres() {
         -e POSTGRES_DB=test_db \
         -p "$POSTGRES_PORT:5432" \
         postgres:15
-    
+
     echo -e "${GREEN}PostgreSQL container started on port $POSTGRES_PORT${NC}"
 }
 
@@ -86,12 +86,12 @@ wait_for_database() {
     local service=$1
     local port=$2
     local password=$3
-    
+
     echo -e "${YELLOW}Waiting for $service to be ready...${NC}"
-    
+
     local max_attempts=30
     local attempt=1
-    
+
     while [ $attempt -le $max_attempts ]; do
         if [ "$service" = "MySQL" ]; then
             if docker exec validatelite-mysql mysqladmin ping -h localhost -u root -p"$password" --silent 2>/dev/null; then
@@ -104,12 +104,12 @@ wait_for_database() {
                 return 0
             fi
         fi
-        
+
         echo -n "."
         sleep 2
         attempt=$((attempt + 1))
     done
-    
+
     echo -e "${RED}Error: $service failed to start within 60 seconds${NC}"
     return 1
 }
@@ -117,7 +117,7 @@ wait_for_database() {
 # Function to test database connections
 test_connections() {
     echo -e "${GREEN}Testing database connections...${NC}"
-    
+
     # Test MySQL
     if docker exec validatelite-mysql mysql -h localhost -u root -p"$MYSQL_PASSWORD" -e "SELECT 1;" test_db >/dev/null 2>&1; then
         echo -e "${GREEN}✓ MySQL connection successful${NC}"
@@ -125,7 +125,7 @@ test_connections() {
         echo -e "${RED}✗ MySQL connection failed${NC}"
         return 1
     fi
-    
+
     # Test PostgreSQL
     if docker exec validatelite-postgres psql -h localhost -U postgres -d test_db -c "SELECT 1;" >/dev/null 2>&1; then
         echo -e "${GREEN}✓ PostgreSQL connection successful${NC}"
@@ -178,13 +178,13 @@ main() {
             check_docker
             check_port $MYSQL_PORT "MySQL"
             check_port $POSTGRES_PORT "PostgreSQL"
-            
+
             start_mysql
             start_postgres
-            
+
             wait_for_database "MySQL" $MYSQL_PORT $MYSQL_PASSWORD
             wait_for_database "PostgreSQL" $POSTGRES_PORT $POSTGRES_PASSWORD
-            
+
             test_connections
             show_connection_info
             ;;
@@ -220,4 +220,4 @@ main() {
 }
 
 # Run main function
-main "$@" 
+main "$@"
