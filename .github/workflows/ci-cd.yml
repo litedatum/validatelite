@@ -81,27 +81,27 @@ jobs:
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_ROOT_PASSWORD: test_password
+          MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD || 'test_password' }}
           MYSQL_DATABASE: test_db
         ports:
           - 3306:3306
         options: >-
-          --health-cmd "mysqladmin ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+          --health-cmd "mysqladmin ping -h localhost -u root -p${{ secrets.MYSQL_ROOT_PASSWORD || 'test_password' }}"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
       postgres:
         image: postgres:15
         env:
-          POSTGRES_PASSWORD: test_password
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD || 'test_password' }}
           POSTGRES_DB: test_db
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+          --health-cmd "pg_isready -h localhost -p 5432 -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
 
     steps:
       - name: Checkout code
@@ -133,12 +133,23 @@ jobs:
 
       - name: Wait for databases to be ready
         run: |
-          while ! mysqladmin ping -h"localhost" -P"3306" -u"root" -p"test_password" --silent; do
-            sleep 1
-          done
-          while ! pg_isready -h localhost -p 5432 -U postgres; do
-            sleep 1
-          done
+          echo "Waiting for MySQL to be ready..."
+          timeout 60 bash -c 'until mysqladmin ping -h"localhost" -P"3306" -u"root" -p"${{ secrets.MYSQL_ROOT_PASSWORD || 'test_password' }}" --silent; do sleep 2; done' || exit 1
+          echo "MySQL is ready!"
+
+          echo "Waiting for PostgreSQL to be ready..."
+          timeout 60 bash -c 'until pg_isready -h localhost -p 5432 -U postgres; do sleep 2; done' || exit 1
+          echo "PostgreSQL is ready!"
+
+      - name: Verify database connectivity
+        run: |
+          echo "Testing MySQL connection..."
+          mysql -h localhost -P 3306 -u root -p"${{ secrets.MYSQL_ROOT_PASSWORD || 'test_password' }}" -e "SELECT 1;" test_db
+          echo "MySQL connection successful!"
+
+          echo "Testing PostgreSQL connection..."
+          PGPASSWORD="${{ secrets.POSTGRES_PASSWORD || 'test_password' }}" psql -h localhost -p 5432 -U postgres -d test_db -c "SELECT 1;"
+          echo "PostgreSQL connection successful!"
 
       - name: Generate test data
         run: |

@@ -42,7 +42,7 @@ repos:
     hooks:
     -   id: mypy
         additional_dependencies:
-          - pydantic 
+          - pydantic
           - types-toml
           - types-python-dateutil
           - pytest
@@ -53,4 +53,3 @@ repos:
           - hypothesis
           - pytest_asyncio
           - click
-          

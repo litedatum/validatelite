@@ -211,4 +211,4 @@ If you're migrating from the old requirements structure:
 
 - Check the [DEVELOPMENT_SETUP.md](DEVELOPMENT_SETUP.md) for detailed setup instructions
 - Review the [pyproject.toml](../pyproject.toml) for the complete dependency specification
-- Use `python scripts/update_requirements.py --help` for script usage 
+- Use `python scripts/update_requirements.py --help` for script usage

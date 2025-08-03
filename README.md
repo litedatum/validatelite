@@ -144,6 +144,9 @@ The project includes comprehensive tests to ensure reliability. If you encounter
 
 ### For Developers
 ```bash
+# Set up test databases (requires Docker)
+./scripts/setup_test_databases.sh start
+
 # Run all tests with coverage
 pytest -vv --cov
 
@@ -154,6 +157,9 @@ pytest tests/e2e/ -v           # End-to-end tests
 
 # Code quality checks
 pre-commit run --all-files
+
+# Stop test databases when done
+./scripts/setup_test_databases.sh stop
 ```
 
 ---
