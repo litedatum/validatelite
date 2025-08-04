@@ -65,6 +65,16 @@ def parse_database_url(url: str) -> Dict[str, str]:
 def get_mysql_connection_params() -> Dict[str, object]:
     """Get MySQL connection parameters as a dictionary."""
     mysql_url = os.getenv("MYSQL_DB_URL")
+    print(f"Length of the retrieved string: {len(mysql_url)}")
+    expected_db_name = "test_db"
+    if mysql_url.endswith(expected_db_name):
+        print(
+            f"✅ PASSED: String correctly ends with '{expected_db_name}'."
+        )
+    else:
+        print(
+            f"❌ FAILED: String DOES NOT end with '{expected_db_name}'. "
+        )
     if "localhost" in mysql_url:
         print("localhost in mysql_url")
     if "127.0.0.1" in mysql_url:
