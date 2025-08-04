@@ -1,0 +1,13 @@
+# Core Engine Configuration
+
+# Performance & Resource Management
+execution_timeout = 300
+table_size_threshold = 10000
+
+# Feature Flags
+merge_execution_enabled = true
+monitoring_enabled = false
+
+# Sample Data Configuration
+sample_data_enabled = true
+sample_data_max_records = 5

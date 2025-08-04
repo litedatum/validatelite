@@ -1,0 +1,42 @@
+# Logging Configuration
+
+# Global log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+level = "ERROR"
+
+# Log message format
+format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Enable logging to file
+to_file = false
+
+# Log file path (used when to_file = true)
+file_path = "logs/app.log"
+
+# Maximum log file size in bytes (10MB default)
+max_bytes = 10485760
+
+# Number of backup log files to keep
+backup_count = 5
+
+# Module-specific log levels
+# You can override the global level for specific modules
+[module_levels]
+# Core modules - set to ERROR to reduce noise
+"shared.database.connection" = "ERROR"
+"cli.commands.check" = "ERROR"
+"cli.core.data_validator" = "ERROR"
+"cli.core.source_parser" = "ERROR"
+"cli.core.rule_parser" = "ERROR"
+"rule_engine" = "ERROR"
+"core.engine.rule_engine" = "ERROR"
+
+# Third-party modules - set to WARNING to reduce noise
+"sqlalchemy" = "WARNING"
+"pydantic" = "WARNING"
+"toml" = "WARNING"
+"werkzeug" = "WARNING"
+"urllib3.connectionpool" = "WARNING"
+
+# Keep some modules at INFO for debugging if needed
+# "cli.app" = "INFO"
+# "shared.utils.logger" = "INFO"

@@ -1,0 +1,16 @@
+# CLI Application Configuration
+
+# General
+debug_mode = false
+
+# Data Source
+default_sample_size = 10000
+max_file_size_mb = 100
+
+# Database Connection
+query_timeout = 300
+
+[database]
+# url = "sqlite:///mydoc/data-quality-app-cli/temp.db"
+connect_timeout = 30
+echo_queries = false

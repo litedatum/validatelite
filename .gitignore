@@ -48,7 +48,7 @@ htmlcov/
 logs/
 
 # Configuration - Ignore local config files, commit examples
-config/*.toml
+# config/*.toml
 
 # Database
 *.db
