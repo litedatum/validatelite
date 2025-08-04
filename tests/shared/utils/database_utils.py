@@ -65,8 +65,12 @@ def parse_database_url(url: str) -> Dict[str, str]:
 def get_mysql_connection_params() -> Dict[str, object]:
     """Get MySQL connection parameters as a dictionary."""
     mysql_url = os.getenv("MYSQL_DB_URL")
-
-    print(mysql_url)
+    if "localhost" in mysql_url:
+        print("localhost in mysql_url")
+    if "127.0.0.1" in mysql_url:
+        print("127.0.0.1 in mysql_url")
+    if "testmysql234" in mysql_url:
+        print("password is correct")
     if mysql_url:
         params = parse_database_url(mysql_url)
         return {
