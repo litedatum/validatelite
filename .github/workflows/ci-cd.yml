@@ -157,19 +157,19 @@ jobs:
 
       - name: Generate test data
         run: |
-          python scripts/sql/generate_test_data.py
+          PYTHONPATH=${{ github.workspace }} python scripts/sql/generate_test_data.py
 
       - name: Run unit tests
         run: |
-          pytest tests/unit/ -v --cov=core --cov=shared --cov-report=xml --cov-report=html
+          PYTHONPATH=${{ github.workspace }} pytest tests/unit/ -v --cov=core --cov=shared --cov-report=xml --cov-report=html
 
       - name: Run integration tests
         run: |
-          pytest tests/integration/ -v --cov=core --cov=shared --cov-report=xml --cov-report=html
+          PYTHONPATH=${{ github.workspace }} pytest tests/integration/ -v --cov=core --cov=shared --cov-report=xml --cov-report=html
 
       - name: Run E2E tests
         run: |
-          pytest tests/e2e/ -v --cov=core --cov=shared --cov-report=xml --cov-report=html
+          PYTHONPATH=${{ github.workspace }} pytest tests/e2e/ -v --cov=core --cov=shared --cov-report=xml --cov-report=html
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
