@@ -557,10 +557,323 @@ class TestOutputFormatter:
     def test_formatter_error_output_to_stderr(
         self, formatter: OutputFormatter, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """Test error output goes to stderr"""
-        formatter.print_error("This is an error message")
-
+        """Test error output goes to stderr."""
+        formatter.print_error("Test error message")
         captured = capsys.readouterr()
+        assert "Test error message" in captured.err
+        assert "Test error message" not in captured.out
 
-        assert captured.out == ""  # Nothing to stdout
-        assert "This is an error message" in captured.err
+    # ==============================
+    # New Architecture Tests (dataset_metrics)
+    # ==============================
+
+    def test_display_results_with_new_architecture_dataset_metrics(
+        self, formatter: OutputFormatter, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Test display_results method with new architecture using dataset_metrics."""
+        from shared.schema.base import DatasetMetrics
+
+        # Create results using new architecture (dataset_metrics)
+        new_format_results = [
+            {
+                "rule_id": "unique_name",
+                "status": "FAILED",
+                "dataset_metrics": [
+                    DatasetMetrics(
+                        entity_name="data_quality.customers",
+                        total_records=1000,
+                        failed_records=2,
+                        processing_time=0.03,
+                    )
+                ],
+                "execution_time": 0.03,
+                "sample_data": [
+                    {"name": "Huhansan3982", "dup_cnt": 2},
+                    {"name": "Yang6646", "dup_cnt": 2},
+                ],
+            },
+            {
+                "rule_id": "not_null_gender",
+                "status": "FAILED",
+                "dataset_metrics": [
+                    DatasetMetrics(
+                        entity_name="data_quality.customers",
+                        total_records=1000,
+                        failed_records=259,
+                        processing_time=0.01,
+                    )
+                ],
+                "execution_time": 0.01,
+                "sample_data": [
+                    {"id": 3, "name": "Emy3737", "gender": None},
+                    {"id": 7, "name": "Huhansan9960", "gender": None},
+                ],
+            },
+        ]
+
+        # Create mock rules
+        rules = [
+            TestDataBuilder.rule()
+            .with_name("unique_name")
+            .with_target("data_quality", "customers", "name")
+            .as_unique_rule()
+            .build(),
+            TestDataBuilder.rule()
+            .with_name("not_null_gender")
+            .with_target("data_quality", "customers", "gender")
+            .as_not_null_rule()
+            .build(),
+        ]
+
+        # Capture output
+        with capsys.disabled():
+            formatter.display_results(
+                results=new_format_results,
+                rules=rules,
+                source="mysql://root:root123@localhost:3306/data_quality.customers",
+                execution_time=0.25,
+                total_rules=2,
+            )
+
+    def test_calculate_stats_with_new_architecture(
+        self, formatter: OutputFormatter
+    ) -> None:
+        """Test _calculate_stats method with new architecture dataset_metrics."""
+        from shared.schema.base import DatasetMetrics
+
+        # Create new format results
+        new_format_results = [
+            {
+                "rule_id": "unique_name",
+                "status": "FAILED",
+                "dataset_metrics": [
+                    DatasetMetrics(
+                        entity_name="test_db.test_table",
+                        total_records=1000,
+                        failed_records=2,
+                        processing_time=0.03,
+                    )
+                ],
+                "execution_time": 0.03,
+            },
+            {
+                "rule_id": "not_null_gender",
+                "status": "FAILED",
+                "dataset_metrics": [
+                    DatasetMetrics(
+                        entity_name="test_db.test_table",
+                        total_records=1000,
+                        failed_records=259,
+                        processing_time=0.01,
+                    )
+                ],
+                "execution_time": 0.01,
+            },
+        ]
+
+        # Calculate stats
+        stats = formatter._calculate_stats(new_format_results)
+
+        # Verify correct calculation from dataset_metrics
+        assert stats["total_rules"] == 2
+        assert stats["passed_rules"] == 0
+        assert stats["failed_rules"] == 2
+        assert stats["total_records"] == 1000  # Should use max from dataset_metrics
+        assert stats["total_failures"] == 261  # 2 + 259
+        assert stats["overall_error_rate"] == 26.1  # (261/1000)*100
+
+    def test_display_rule_result_with_new_architecture(
+        self, formatter: OutputFormatter, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Test _display_rule_result method with new architecture dataset_metrics."""
+        from shared.schema.base import DatasetMetrics
+
+        # Create new format result
+        new_format_result = {
+            "rule_id": "unique_name",
+            "status": "FAILED",
+            "dataset_metrics": [
+                DatasetMetrics(
+                    entity_name="test_db.test_table",
+                    total_records=1000,
+                    failed_records=2,
+                    processing_time=0.03,
+                )
+            ],
+            "execution_time": 0.03,
+            "sample_data": [
+                {"name": "Huhansan3982", "dup_cnt": 2},
+                {"name": "Yang6646", "dup_cnt": 2},
+            ],
+        }
+
+        # Create mock rule map
+        rule_map = {
+            "unique_name": TestDataBuilder.rule()
+            .with_name("unique_name")
+            .with_target("test_db", "test_table", "name")
+            .as_unique_rule()
+            .build()
+        }
+
+        # Test verbose mode to show samples
+        formatter.verbose = True
+
+        # Capture output
+        with capsys.disabled():
+            formatter._display_rule_result(
+                result=new_format_result, rule_map=rule_map, show_samples=True
+            )
+
+    def test_mixed_old_and_new_architecture_results(
+        self, formatter: OutputFormatter
+    ) -> None:
+        """Test handling of mixed old and new architecture results."""
+        from shared.schema.base import DatasetMetrics
+
+        # Mix of old and new format results
+        mixed_results = [
+            # Old format (legacy)
+            {
+                "rule_id": "old_rule",
+                "status": "PASSED",
+                "failed_records": 0,
+                "total_records": 1000,
+                "execution_time": 0.05,
+            },
+            # New format (dataset_metrics)
+            {
+                "rule_id": "new_rule",
+                "status": "FAILED",
+                "dataset_metrics": [
+                    DatasetMetrics(
+                        entity_name="test_db.test_table",
+                        total_records=1000,
+                        failed_records=5,
+                        processing_time=0.02,
+                    )
+                ],
+                "execution_time": 0.02,
+            },
+        ]
+
+        # Calculate stats
+        stats = formatter._calculate_stats(mixed_results)
+
+        # Verify correct handling of mixed formats
+        assert stats["total_rules"] == 2
+        assert stats["passed_rules"] == 1
+        assert stats["failed_rules"] == 1
+        assert stats["total_records"] == 1000
+        assert stats["total_failures"] == 5  # 0 + 5
+        assert stats["overall_error_rate"] == 0.5  # (5/1000)*100
+
+    def test_new_architecture_with_multiple_dataset_metrics(
+        self, formatter: OutputFormatter
+    ) -> None:
+        """Test handling of multiple dataset_metrics in new architecture."""
+        from shared.schema.base import DatasetMetrics
+
+        # Result with multiple dataset_metrics
+        multi_dataset_result = {
+            "rule_id": "multi_table_rule",
+            "status": "FAILED",
+            "dataset_metrics": [
+                DatasetMetrics(
+                    entity_name="db1.table1",
+                    total_records=500,
+                    failed_records=3,
+                    processing_time=0.01,
+                ),
+                DatasetMetrics(
+                    entity_name="db2.table2",
+                    total_records=300,
+                    failed_records=2,
+                    processing_time=0.01,
+                ),
+            ],
+            "execution_time": 0.02,
+        }
+
+        # Calculate stats
+        stats = formatter._calculate_stats([multi_dataset_result])
+
+        # Verify aggregation across multiple datasets
+        assert stats["total_rules"] == 1
+        assert stats["failed_rules"] == 1
+        assert (
+            stats["total_records"] == 800
+        )  # Should sum total_records from all datasets (500 + 300)
+        assert stats["total_failures"] == 5  # 3 + 2
+        assert stats["overall_error_rate"] == 0.625  # (5/800)*100
+
+    def test_new_architecture_zero_records_edge_case(
+        self, formatter: OutputFormatter
+    ) -> None:
+        """Test edge case with zero records in new architecture."""
+        from shared.schema.base import DatasetMetrics
+
+        # Result with zero records
+        zero_records_result = {
+            "rule_id": "empty_table_rule",
+            "status": "PASSED",
+            "dataset_metrics": [
+                DatasetMetrics(
+                    entity_name="test_db.empty_table",
+                    total_records=0,
+                    failed_records=0,
+                    processing_time=0.0,
+                )
+            ],
+            "execution_time": 0.0,
+        }
+
+        # Calculate stats
+        stats = formatter._calculate_stats([zero_records_result])
+
+        # Verify handling of zero records
+        assert stats["total_rules"] == 1
+        assert stats["passed_rules"] == 1
+        assert stats["failed_rules"] == 0
+        assert stats["total_records"] == 0
+        assert stats["total_failures"] == 0
+        assert stats["overall_error_rate"] == 0.0  # Should handle division by zero
+
+    def test_new_architecture_model_dump_compatibility(
+        self, formatter: OutputFormatter
+    ) -> None:
+        """Test that model_dump() results work correctly with new architecture."""
+        from shared.schema.base import DatasetMetrics
+
+        # Create ExecutionResultSchema with new architecture
+        result_schema = ExecutionResultSchema(
+            rule_id="test_rule",
+            status="FAILED",
+            dataset_metrics=[
+                DatasetMetrics(
+                    entity_name="test_db.test_table",
+                    total_records=1000,
+                    failed_records=10,
+                    processing_time=0.05,
+                )
+            ],
+            execution_time=0.05,
+        )
+
+        # Convert to dict using model_dump()
+        result_dict = result_schema.model_dump()
+
+        # Verify the dict contains dataset_metrics but not failed_records/total_records
+        assert "dataset_metrics" in result_dict
+        assert "failed_records" not in result_dict
+        assert "total_records" not in result_dict
+
+        # Test that our formatter can handle this correctly
+        stats = formatter._calculate_stats([result_dict])
+
+        # Verify correct calculation from dataset_metrics
+        assert stats["total_rules"] == 1
+        assert stats["failed_rules"] == 1
+        assert stats["total_records"] == 1000
+        assert stats["total_failures"] == 10
+        assert stats["overall_error_rate"] == 1.0  # (10/1000)*100

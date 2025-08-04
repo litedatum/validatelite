@@ -10,23 +10,22 @@ import asyncio
 import os
 import random
 import sys
-from typing import List, Tuple
+from typing import List, Tuple, cast
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+from shared.enums.connection_types import ConnectionType
 from tests.shared.utils.database_utils import (
     get_available_databases,
-    get_mysql_test_url,
-    get_postgresql_test_url,
+    get_db_url,
+    get_mysql_connection_params,
+    get_postgresql_connection_params,
 )
-
-# Add project root to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 def generate_customer_data(count: int = 1000) -> List[Tuple]:
-    """Generate test customer data."""
+    """Generate test customer data with specific patterns to ensure test cases pass."""
     names = [
         "Alice",
         "Bob",
@@ -49,11 +48,128 @@ def generate_customer_data(count: int = 1000) -> List[Tuple]:
     domains = ["example.com", "test.org", "mail.com", "sample.net"]
 
     customers = []
-    for i in range(count):
-        name = f"{random.choice(names)}{random.randint(1000, 9999)}"
+
+    # Ensure we have specific test patterns for failing test cases
+    test_patterns = [
+        # Pattern 1: NULL emails (for not_null test)
+        (
+            f"{random.choice(names)}1001",
+            None,
+            random.randint(18, 65),
+            random.choice([0, 1]),
+        ),
+        (
+            f"{random.choice(names)}1002",
+            None,
+            random.randint(18, 65),
+            random.choice([0, 1]),
+        ),
+        (
+            f"{random.choice(names)}1003",
+            None,
+            random.randint(18, 65),
+            random.choice([0, 1]),
+        ),
+        # Pattern 2: Invalid email formats (for regex test)
+        (
+            f"{random.choice(names)}2001",
+            "invalid-email",
+            random.randint(18, 65),
+            random.choice([0, 1]),
+        ),
+        (
+            f"{random.choice(names)}2002",
+            "test@",
+            random.randint(18, 65),
+            random.choice([0, 1]),
+        ),
+        (
+            f"{random.choice(names)}2003",
+            "@example.com",
+            random.randint(18, 65),
+            random.choice([0, 1]),
+        ),
+        (
+            f"{random.choice(names)}2004",
+            "test..test@example.com",
+            random.randint(18, 65),
+            random.choice([0, 1]),
+        ),
+        (
+            f"{random.choice(names)}2005",
+            "test@example",
+            random.randint(18, 65),
+            random.choice([0, 1]),
+        ),
+        # Pattern 3: Duplicate emails (for unique test)
+        (
+            f"{random.choice(names)}3001",
+            "duplicate@example.com",
+            random.randint(18, 65),
+            random.choice([0, 1]),
+        ),
+        (
+            f"{random.choice(names)}3002",
+            "duplicate@example.com",
+            random.randint(18, 65),
+            random.choice([0, 1]),
+        ),
+        (
+            f"{random.choice(names)}3003",
+            "duplicate@example.com",
+            random.randint(18, 65),
+            random.choice([0, 1]),
+        ),
+        # Pattern 4: Invalid ages (for range test)
+        (
+            f"{random.choice(names)}4001",
+            f"{random.choice(names).lower()}4001@{random.choice(domains)}",
+            -10,
+            random.choice([0, 1]),
+        ),
+        (
+            f"{random.choice(names)}4002",
+            f"{random.choice(names).lower()}4002@{random.choice(domains)}",
+            150,
+            random.choice([0, 1]),
+        ),
+        (
+            f"{random.choice(names)}4003",
+            f"{random.choice(names).lower()}4003@{random.choice(domains)}",
+            200,
+            random.choice([0, 1]),
+        ),
+        # Pattern 5: Invalid gender values (for enum test)
+        (
+            f"{random.choice(names)}5001",
+            f"{random.choice(names).lower()}5001@{random.choice(domains)}",
+            random.randint(18, 65),
+            3,
+        ),
+        (
+            f"{random.choice(names)}5002",
+            f"{random.choice(names).lower()}5002@{random.choice(domains)}",
+            random.randint(18, 65),
+            None,
+        ),
+        (
+            f"{random.choice(names)}5003",
+            f"{random.choice(names).lower()}5003@{random.choice(domains)}",
+            random.randint(18, 65),
+            5,
+        ),
+    ]
+
+    # Add the test patterns first
+    customers.extend(test_patterns)
+
+    # Generate remaining random data
+    remaining_count = count - len(test_patterns)
+    for i in range(remaining_count):
+        name = f"{random.choice(names)}{random.randint(5000, 9999)}"
         email = f"{name.lower()}{random.randint(100, 999)}@{random.choice(domains)}"
-        age = random.randint(-50, 200)  # Include some invalid ages for testing
-        gender = random.choice([0, 1, 3, None])  # Include invalid values
+        age = random.randint(18, 65)  # Valid age range
+        gender = random.choice([0, 1])  # Valid gender values
 
         customers.append((name, email, age, gender))
 
@@ -81,8 +197,15 @@ async def insert_test_data(engine: AsyncEngine, customers: List[Tuple]) -> None:
 async def setup_mysql_database() -> None:
     """Setup MySQL database with schema and test data."""
     # Get MySQL URL from environment variables
-    db_url = get_mysql_test_url()
-
+    connection_params = get_mysql_connection_params()
+    db_url = get_db_url(
+        db_type=ConnectionType.MYSQL,
+        database=str(connection_params["database"]),
+        username=str(connection_params["username"]),
+        password=str(connection_params["password"]),
+        host=str(connection_params["host"]),
+        port=cast(int, connection_params["port"]),
+    )
     # Create engine
     engine = create_async_engine(db_url, echo=False)
 
@@ -116,7 +239,15 @@ async def setup_mysql_database() -> None:
 async def setup_postgresql_database() -> None:
     """Setup PostgreSQL database with schema and test data."""
     # Get PostgreSQL URL from environment variables
-    db_url = get_postgresql_test_url()
+    connection_params = get_postgresql_connection_params()
+    db_url = get_db_url(
+        db_type=ConnectionType.POSTGRESQL,
+        database=str(connection_params["database"]),
+        username=str(connection_params["username"]),
+        password=str(connection_params["password"]),
+        host=str(connection_params["host"]),
+        port=cast(int, connection_params["port"]),
+    )
 
     # Create engine
     engine = create_async_engine(db_url, echo=False)

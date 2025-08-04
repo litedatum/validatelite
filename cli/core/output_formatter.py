@@ -86,8 +86,35 @@ class OutputFormatter:
                 # Dictionary
                 if r.get("status") == "PASSED":
                     passed_rules += 1
-                total_failures += r.get("failed_records", 0) or 0
+
+                # Handle both old format (failed_records/total_records)
+                #  and new format (dataset_metrics)
+                failed_count = r.get("failed_records", 0) or 0
                 record_count = r.get("total_records", 0) or 0
+
+                # If using new format with dataset_metrics, calculate from
+                # dataset_metrics
+                if "dataset_metrics" in r and not failed_count and not record_count:
+                    dataset_metrics = r.get("dataset_metrics", [])
+                    # Handle both dict and DatasetMetrics objects
+                    failed_count = sum(
+                        (
+                            dm.failed_records
+                            if hasattr(dm, "failed_records")
+                            else dm.get("failed_records", 0)
+                        )
+                        for dm in dataset_metrics
+                    )
+                    record_count = sum(
+                        (
+                            dm.total_records
+                            if hasattr(dm, "total_records")
+                            else dm.get("total_records", 0)
+                        )
+                        for dm in dataset_metrics
+                    )
+
+                total_failures += failed_count
                 if record_count > total_records:
                     total_records = record_count
 
@@ -202,8 +229,41 @@ class OutputFormatter:
             rule_type = result.get("rule_type", "")
             column = result.get("column_name", "")
         status = result.get("status", "UNKNOWN")
+
+        # Handle both old format (failed_records/total_records)
+        # and new format (error_count/total_count)
         failed_records = result.get("failed_records", 0)
         total_records = result.get("total_records", 0)
+
+        # If using new format with dataset_metrics, calculate from properties
+        if "dataset_metrics" in result and not failed_records and not total_records:
+            # This is a new format result, we need to calculate from dataset_metrics
+            # For backward compatibility, we'll add these fields to the result dict
+            if hasattr(result, "error_count"):
+                failed_records = result.error_count
+            elif hasattr(result, "total_count"):
+                total_records = result.total_count
+            else:
+                # Calculate from dataset_metrics
+                dataset_metrics = result.get("dataset_metrics", [])
+                # Handle both dict and DatasetMetrics objects
+                failed_records = sum(
+                    (
+                        dm.failed_records
+                        if hasattr(dm, "failed_records")
+                        else dm.get("failed_records", 0)
+                    )
+                    for dm in dataset_metrics
+                )
+                total_records = sum(
+                    (
+                        dm.total_records
+                        if hasattr(dm, "total_records")
+                        else dm.get("total_records", 0)
+                    )
+                    for dm in dataset_metrics
+                )
+
         execution_time = result.get("execution_time", 0)
         sample_data = result.get("sample_data")
         error_message = result.get("error_message", "")
