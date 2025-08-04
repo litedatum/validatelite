@@ -78,23 +78,26 @@ jobs:
       # Database URLs for testing (using environment variables for security)
       MYSQL_DB_URL: ${{ secrets.MYSQL_DB_URL }}
       POSTGRESQL_DB_URL: ${{ secrets.POSTGRESQL_DB_URL }}
+      # Database passwords for service containers
+      MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
     services:
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+          MYSQL_ROOT_PASSWORD: ${{ env.MYSQL_ROOT_PASSWORD }}
           MYSQL_DATABASE: test_db
         ports:
           - 3306:3306
         options: >-
-          --health-cmd "mysqladmin ping -h localhost -u root -p${{ secrets.MYSQL_ROOT_PASSWORD }}"
+          --health-cmd "mysqladmin ping -h localhost -u root -p${{ env.MYSQL_ROOT_PASSWORD }}"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
       postgres:
         image: postgres:15
         env:
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
           POSTGRES_DB: test_db
         ports:
           - 5432:5432
@@ -135,7 +138,7 @@ jobs:
       - name: Wait for databases to be ready
         run: |
           echo "Waiting for MySQL to be ready..."
-          timeout 60 bash -c 'until mysqladmin ping -h"localhost" -P"3306" -u"root" -p"${{ secrets.MYSQL_ROOT_PASSWORD }}" --silent; do sleep 2; done' || exit 1
+          timeout 60 bash -c 'until mysqladmin ping -h"localhost" -P"3306" -u"root" -p"${{ env.MYSQL_ROOT_PASSWORD }}" --silent; do sleep 2; done' || exit 1
           echo "MySQL is ready!"
 
           echo "Waiting for PostgreSQL to be ready..."
@@ -145,11 +148,11 @@ jobs:
       - name: Verify database connectivity
         run: |
           echo "Testing MySQL connection..."
-          mysql -h localhost -P 3306 -u root -p"${{ secrets.MYSQL_ROOT_PASSWORD }}" -e "SELECT 1;" test_db
+          mysql -h localhost -P 3306 -u root -p"${{ env.MYSQL_ROOT_PASSWORD }}" -e "SELECT 1;" test_db
           echo "MySQL connection successful!"
 
           echo "Testing PostgreSQL connection..."
-          PGPASSWORD="${{ secrets.POSTGRES_PASSWORD }}" psql -h localhost -p 5432 -U postgres -d test_db -c "SELECT 1;"
+          PGPASSWORD="${{ env.POSTGRES_PASSWORD }}" psql -h localhost -p 5432 -U postgres -d test_db -c "SELECT 1;"
           echo "PostgreSQL connection successful!!!"
 
       - name: Generate test data
