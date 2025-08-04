@@ -198,6 +198,7 @@ async def setup_mysql_database() -> None:
     """Setup MySQL database with schema and test data."""
     # Get MySQL URL from environment variables
     connection_params = get_mysql_connection_params()
+    print(connection_params)
     db_url = get_db_url(
         db_type=ConnectionType.MYSQL,
         database=str(connection_params["database"]),

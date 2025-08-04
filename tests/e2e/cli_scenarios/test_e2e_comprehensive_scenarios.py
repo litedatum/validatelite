@@ -216,7 +216,10 @@ class TestE2EComprehensiveScenarios:
         """
 
         # Test with invalid connection parameters
-        invalid_source = self.MYSQL_DATA_SOURCE.replace("localhost", "invalid-host")
+        # Create a completely invalid MySQL connection string that doesn't depend on environment variables
+        invalid_source = (
+            "mysql://invalid-user:invalid-pass@invalid-host:3306/invalid-db.customers"
+        )
         command = ["check", invalid_source, "--rule", "not_null(name)"]
         result = E2ETestUtils.run_cli_command(command)
 

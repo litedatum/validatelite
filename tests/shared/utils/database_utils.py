@@ -65,6 +65,8 @@ def parse_database_url(url: str) -> Dict[str, str]:
 def get_mysql_connection_params() -> Dict[str, object]:
     """Get MySQL connection parameters as a dictionary."""
     mysql_url = os.getenv("MYSQL_DB_URL")
+
+    print(mysql_url)
     if mysql_url:
         params = parse_database_url(mysql_url)
         return {
