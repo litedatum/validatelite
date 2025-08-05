@@ -72,6 +72,11 @@ class RealDatabaseIntegrationTestBase:
         return TestDataBuilder()
 
     @pytest.fixture
+    def get_test_database(self, mysql_connection_params: Dict[str, object]) -> str:
+        """MySQL connection parameters"""
+        return str(mysql_connection_params["database"])
+
+    @pytest.fixture
     def customers_connection(
         self, builder: TestDataBuilder, mysql_connection_params: Dict[str, object]
     ) -> ConnectionSchema:
@@ -92,10 +97,10 @@ class RealDatabaseIntegrationTestBase:
 
     @pytest.fixture
     def real_database_rules(
-        self, builder: TestDataBuilder, mysql_connection_params: Dict[str, object]
+        self, builder: TestDataBuilder, get_test_database: str
     ) -> List[Rule]:
         """Rules designed to test actual data quality issues in customers table"""
-        database_name: str = str(mysql_connection_params["database"])
+        database_name: str = get_test_database
         return [
             # NOT_NULL rules - will find actual NULL values
             builder.rule()
@@ -258,7 +263,10 @@ class TestRealDatabaseWorkflow(RealDatabaseIntegrationTestBase):
                 ), "Should find email format violations"
 
     async def test_single_rule_execution_with_real_data(
-        self, real_database_engine: RuleEngine, builder: TestDataBuilder
+        self,
+        real_database_engine: RuleEngine,
+        builder: TestDataBuilder,
+        get_test_database: str,
     ) -> None:
         """Test single rule execution with real database data"""
         # Arrange: Single rule that should find issues
@@ -266,7 +274,7 @@ class TestRealDatabaseWorkflow(RealDatabaseIntegrationTestBase):
             builder.rule()
             .with_name("single_age_range")
             .as_range_rule(0, 120)
-            .with_target("data_quality", "customers", "age")
+            .with_target(get_test_database, "customers", "age")
             .build()
         ]
 
@@ -297,7 +305,10 @@ class TestRealDatabaseWorkflow(RealDatabaseIntegrationTestBase):
                 assert result.error_count > 0
 
     async def test_multiple_rules_same_column_real_data(
-        self, real_database_engine: RuleEngine, builder: TestDataBuilder
+        self,
+        real_database_engine: RuleEngine,
+        builder: TestDataBuilder,
+        get_test_database: str,
     ) -> None:
         """Test multiple rules targeting same column with real data"""
         # Arrange: Multiple rules for email column
@@ -305,22 +316,22 @@ class TestRealDatabaseWorkflow(RealDatabaseIntegrationTestBase):
             builder.rule()
             .with_name("email_not_null_multi")
             .as_not_null_rule()
-            .with_target("data_quality", "customers", "email")
+            .with_target(get_test_database, "customers", "email")
             .build(),
             builder.rule()
             .with_name("email_format_multi")
             .as_regex_rule(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
-            .with_target("data_quality", "customers", "email")
+            .with_target(get_test_database, "customers", "email")
             .build(),
             builder.rule()
             .with_name("email_unique_multi")
             .as_unique_rule()
-            .with_target("data_quality", "customers", "email")
+            .with_target(get_test_database, "customers", "email")
             .build(),
             builder.rule()
             .with_name("email_length_multi")
             .as_length_rule(5, 100)
-            .with_target("data_quality", "customers", "email")
+            .with_target(get_test_database, "customers", "email")
             .build(),
         ]
 
@@ -386,7 +397,10 @@ class TestRealDatabaseErrorHandling(RealDatabaseIntegrationTestBase):
     """
 
     async def test_nonexistent_table_error(
-        self, real_database_engine: RuleEngine, builder: TestDataBuilder
+        self,
+        real_database_engine: RuleEngine,
+        builder: TestDataBuilder,
+        get_test_database: str,
     ) -> None:
         """Test handling of non-existent table with real database"""
         # Arrange: Rule targeting non-existent table
@@ -394,7 +408,7 @@ class TestRealDatabaseErrorHandling(RealDatabaseIntegrationTestBase):
             builder.rule()
             .with_name("invalid_table_test")
             .as_not_null_rule()
-            .with_target("data_quality", "nonexistent_table", "name")
+            .with_target(get_test_database, "nonexistent_table", "name")
             .build()
         ]
 
@@ -412,7 +426,10 @@ class TestRealDatabaseErrorHandling(RealDatabaseIntegrationTestBase):
         )
 
     async def test_nonexistent_column_error(
-        self, real_database_engine: RuleEngine, builder: TestDataBuilder
+        self,
+        real_database_engine: RuleEngine,
+        builder: TestDataBuilder,
+        get_test_database: str,
     ) -> None:
         """Test handling of non-existent column with real database"""
         # Arrange: Rule targeting non-existent column
@@ -420,7 +437,7 @@ class TestRealDatabaseErrorHandling(RealDatabaseIntegrationTestBase):
             builder.rule()
             .with_name("invalid_column_test")
             .as_not_null_rule()
-            .with_target("data_quality", "customers", "nonexistent_column")
+            .with_target(get_test_database, "customers", "nonexistent_column")
             .build()
         ]
 
@@ -437,7 +454,9 @@ class TestRealDatabaseErrorHandling(RealDatabaseIntegrationTestBase):
             or "field" in result.error_message.lower()
         )
 
-    async def test_invalid_database_connection(self, builder: TestDataBuilder) -> None:
+    async def test_invalid_database_connection(
+        self, builder: TestDataBuilder, get_test_database: str
+    ) -> None:
         """Test handling of invalid database connection"""
         # Arrange: Invalid connection parameters
         invalid_connection = (
@@ -457,7 +476,7 @@ class TestRealDatabaseErrorHandling(RealDatabaseIntegrationTestBase):
             builder.rule()
             .with_name("connection_test")
             .as_not_null_rule()
-            .with_target("data_quality", "customers", "name")
+            .with_target(get_test_database, "customers", "name")
             .build()
         ]
 
@@ -473,7 +492,10 @@ class TestRealDatabaseErrorHandling(RealDatabaseIntegrationTestBase):
         ), f"Error message should indicate connection problem: {exc_info.value}"
 
     async def test_partial_rule_failure_recovery(
-        self, real_database_engine: RuleEngine, builder: TestDataBuilder
+        self,
+        real_database_engine: RuleEngine,
+        builder: TestDataBuilder,
+        get_test_database: str,
     ) -> None:
         """Test partial rule failure recovery with real database"""
         # Arrange: Mix of valid and invalid rules
@@ -483,25 +505,25 @@ class TestRealDatabaseErrorHandling(RealDatabaseIntegrationTestBase):
             builder.rule()
             .with_name("valid_rule_1")
             .as_not_null_rule()
-            .with_target("data_quality", "customers", "name")
+            .with_target(get_test_database, "customers", "name")
             .build(),
             # Valid rule - should succeed
             builder.rule()
             .with_name("valid_rule_2")
             .as_range_rule(0, 120)
-            .with_target("data_quality", "customers", "age")
+            .with_target(get_test_database, "customers", "age")
             .build(),
             # Invalid rule - should fail (nonexistent column)
             builder.rule()
             .with_name("invalid_rule_1")
             .as_not_null_rule()
-            .with_target("data_quality", "customers", "nonexistent_column")
+            .with_target(get_test_database, "customers", "nonexistent_column")
             .build(),
             # Invalid rule - should fail (nonexistent table)
             builder.rule()
             .with_name("invalid_rule_2")
             .as_not_null_rule()
-            .with_target("data_quality", "nonexistent_table", "name")
+            .with_target(get_test_database, "nonexistent_table", "name")
             .build(),
         ]
 
@@ -558,7 +580,10 @@ class TestRealDatabaseBoundaryConditions(RealDatabaseIntegrationTestBase):
         assert results == []
 
     async def test_large_rule_set_real_database(
-        self, real_database_engine: RuleEngine, builder: TestDataBuilder
+        self,
+        real_database_engine: RuleEngine,
+        builder: TestDataBuilder,
+        get_test_database: str,
     ) -> None:
         """Test large rule set with real database"""
         # Arrange: Create many rules targeting different columns
@@ -572,7 +597,7 @@ class TestRealDatabaseBoundaryConditions(RealDatabaseIntegrationTestBase):
                     builder.rule()
                     .with_name(f"large_rule_{i}")
                     .as_not_null_rule()
-                    .with_target("data_quality", "customers", column)
+                    .with_target(get_test_database, "customers", column)
                     .build()
                 )
             elif column == "age":
@@ -580,7 +605,7 @@ class TestRealDatabaseBoundaryConditions(RealDatabaseIntegrationTestBase):
                     builder.rule()
                     .with_name(f"large_rule_{i}")
                     .as_range_rule(0, 120)
-                    .with_target("data_quality", "customers", column)
+                    .with_target(get_test_database, "customers", column)
                     .build()
                 )
             else:  # gender
@@ -588,7 +613,7 @@ class TestRealDatabaseBoundaryConditions(RealDatabaseIntegrationTestBase):
                     builder.rule()
                     .with_name(f"large_rule_{i}")
                     .as_range_rule(0, 1)
-                    .with_target("data_quality", "customers", column)
+                    .with_target(get_test_database, "customers", column)
                     .build()
                 )
 
@@ -616,7 +641,10 @@ class TestRealDatabaseBoundaryConditions(RealDatabaseIntegrationTestBase):
         ), "Should return results for all rules"
 
     async def test_concurrent_execution_real_database(
-        self, real_database_engine: RuleEngine, builder: TestDataBuilder
+        self,
+        real_database_engine: RuleEngine,
+        builder: TestDataBuilder,
+        get_test_database: str,
     ) -> None:
         """Test concurrent execution with real database"""
         # Arrange: Create multiple rule sets
@@ -626,7 +654,7 @@ class TestRealDatabaseBoundaryConditions(RealDatabaseIntegrationTestBase):
                 builder.rule()
                 .with_name(f"concurrent_rule_{i}_{j}")
                 .as_not_null_rule()
-                .with_target("data_quality", "customers", "name")
+                .with_target(get_test_database, "customers", "name")
                 .build()
                 for j in range(3)
             ]
@@ -670,7 +698,10 @@ class TestRealDatabaseDataQualityValidation(RealDatabaseIntegrationTestBase):
     """
 
     async def test_null_value_detection(
-        self, real_database_engine: RuleEngine, builder: TestDataBuilder
+        self,
+        real_database_engine: RuleEngine,
+        builder: TestDataBuilder,
+        get_test_database: str,
     ) -> None:
         """Test detection of NULL values in real data"""
         # Arrange: Rules to detect NULL values
@@ -678,17 +709,17 @@ class TestRealDatabaseDataQualityValidation(RealDatabaseIntegrationTestBase):
             builder.rule()
             .with_name("detect_null_emails")
             .as_not_null_rule()
-            .with_target("data_quality", "customers", "email")
+            .with_target(get_test_database, "customers", "email")
             .build(),
             builder.rule()
             .with_name("detect_null_ages")
             .as_not_null_rule()
-            .with_target("data_quality", "customers", "age")
+            .with_target(get_test_database, "customers", "age")
             .build(),
             builder.rule()
             .with_name("detect_null_genders")
             .as_not_null_rule()
-            .with_target("data_quality", "customers", "gender")
+            .with_target(get_test_database, "customers", "gender")
             .build(),
         ]
 
@@ -725,7 +756,10 @@ class TestRealDatabaseDataQualityValidation(RealDatabaseIntegrationTestBase):
             assert gender_result.error_count > 0, "Should detect NULL gender values"
 
     async def test_range_violation_detection(
-        self, real_database_engine: RuleEngine, builder: TestDataBuilder
+        self,
+        real_database_engine: RuleEngine,
+        builder: TestDataBuilder,
+        get_test_database: str,
     ) -> None:
         """Test detection of range violations in real data"""
         # Arrange: Rules to detect range violations
@@ -733,12 +767,12 @@ class TestRealDatabaseDataQualityValidation(RealDatabaseIntegrationTestBase):
             builder.rule()
             .with_name("detect_negative_ages")
             .as_range_rule(0, 120)
-            .with_target("data_quality", "customers", "age")
+            .with_target(get_test_database, "customers", "age")
             .build(),
             builder.rule()
             .with_name("detect_invalid_genders")
             .as_range_rule(0, 1)
-            .with_target("data_quality", "customers", "gender")
+            .with_target(get_test_database, "customers", "gender")
             .build(),
         ]
 
@@ -767,7 +801,10 @@ class TestRealDatabaseDataQualityValidation(RealDatabaseIntegrationTestBase):
             assert gender_result.error_count > 0, "Should detect invalid gender values"
 
     async def test_format_violation_detection(
-        self, real_database_engine: RuleEngine, builder: TestDataBuilder
+        self,
+        real_database_engine: RuleEngine,
+        builder: TestDataBuilder,
+        get_test_database: str,
     ) -> None:
         """Test detection of format violations in real data"""
         # Arrange: Rules to detect format violations
@@ -775,7 +812,7 @@ class TestRealDatabaseDataQualityValidation(RealDatabaseIntegrationTestBase):
             builder.rule()
             .with_name("detect_invalid_emails")
             .as_regex_rule(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
-            .with_target("data_quality", "customers", "email")
+            .with_target(get_test_database, "customers", "email")
             .build()
         ]
 
