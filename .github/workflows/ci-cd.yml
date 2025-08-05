@@ -32,7 +32,7 @@ on:
       - '!*.md'
       - '!LICENSE'
   release:
-    types: [published]
+    types: [released]
   workflow_dispatch:
 
 env:
@@ -233,7 +233,7 @@ jobs:
     name: Build Package
     needs: [pre-commit, test, security-scan]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'release' && github.event.action == 'published')
 
     steps:
       - name: Checkout code
@@ -276,7 +276,7 @@ jobs:
     name: Release to PyPI
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'release' && github.event.action == 'published'
+    if: github.event_name == 'release' && github.event.action == 'released'
     environment: pypi-publish
 
     steps:
@@ -293,52 +293,3 @@ jobs:
         run: |
           echo "Deploying to PyPI using Trusted Publisher..."
           twine upload dist/*
-
-  auto-release:
-    name: Auto Release to PyPI
-    needs: build
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/') && github.event_name == 'push'
-    environment: pypi-publish
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
-
-      - name: Deploy to PyPI
-        run: |
-          echo "Deploying to PyPI using Trusted Publisher..."
-          twine upload dist/*
-
-      - name: Create GitHub Release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref_name }}
-          release_name: Release ${{ github.ref_name }}
-          body: |
-            ## What's Changed
-
-            This release includes:
-            - Bug fixes and improvements
-            - Performance optimizations
-            - New features
-
-            ## Installation
-
-            ```bash
-            pip install validatelite==${{ github.ref_name }}
-            ```
-
-            ## Changelog
-
-            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for detailed changes.
-          draft: false
-          prerelease: false
