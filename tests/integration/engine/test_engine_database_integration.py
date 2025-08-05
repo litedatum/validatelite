@@ -91,64 +91,67 @@ class RealDatabaseIntegrationTestBase:
         )
 
     @pytest.fixture
-    def real_database_rules(self, builder: TestDataBuilder) -> List[Rule]:
+    def real_database_rules(
+        self, builder: TestDataBuilder, mysql_connection_params: Dict[str, object]
+    ) -> List[Rule]:
         """Rules designed to test actual data quality issues in customers table"""
+        database_name: str = str(mysql_connection_params["database"])
         return [
             # NOT_NULL rules - will find actual NULL values
             builder.rule()
             .with_name("name_not_null")
             .as_not_null_rule()
-            .with_target("data_quality", "customers", "name")
+            .with_target(database_name, "customers", "name")
             .build(),
             builder.rule()
             .with_name("email_not_null")
             .as_not_null_rule()
-            .with_target("data_quality", "customers", "email")
+            .with_target(database_name, "customers", "email")
             .build(),
             builder.rule()
             .with_name("age_not_null")
             .as_not_null_rule()
-            .with_target("data_quality", "customers", "age")
+            .with_target(database_name, "customers", "age")
             .build(),
             builder.rule()
             .with_name("gender_not_null")
             .as_not_null_rule()
-            .with_target("data_quality", "customers", "gender")
+            .with_target(database_name, "customers", "gender")
             .build(),
             # RANGE rules - will find negative ages and excessive ages
             builder.rule()
             .with_name("age_range_check")
             .as_range_rule(0, 120)
-            .with_target("data_quality", "customers", "age")
+            .with_target(database_name, "customers", "age")
             .build(),
             builder.rule()
             .with_name("gender_range_check")
             .as_range_rule(0, 1)
-            .with_target("data_quality", "customers", "gender")
+            .with_target(database_name, "customers", "gender")
             .build(),
             # REGEX rules - will find invalid email formats
             builder.rule()
             .with_name("email_format_check")
             .as_regex_rule(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
-            .with_target("data_quality", "customers", "email")
+            .with_target(database_name, "customers", "email")
             .build(),
             # UNIQUE rules - will find duplicate emails
             builder.rule()
             .with_name("email_unique_check")
             .as_unique_rule()
-            .with_target("data_quality", "customers", "email")
+            .with_target(database_name, "customers", "email")
             .build(),
             # LENGTH rules - will find name length issues
             builder.rule()
             .with_name("name_length_check")
             .as_length_rule(1, 50)
-            .with_target("data_quality", "customers", "name")
+            .with_target(database_name, "customers", "name")
             .build(),
             # ENUM rules - will find invalid gender values
             builder.rule()
             .with_name("gender_enum_check")
             .as_enum_rule(["0", "1"])
-            .with_target("data_quality", "customers", "gender")
+            .with_target(database_name, "customers", "gender")
             .build(),
         ]
 
