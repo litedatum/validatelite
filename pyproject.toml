@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "validatelite"
-version = "0.1.0"
+version = "0.3.0"
 description = "A flexible, extensible command-line tool for automated data quality validation"
 readme = "README.md"
 license = {text = "MIT"}
