@@ -286,6 +286,9 @@ jobs:
     if: (github.event_name == 'release' && github.event.action == 'published') || (github.event_name == 'workflow_dispatch')
     environment: pypi-publish
 
+    permissions:
+      id-token: write
+      
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
