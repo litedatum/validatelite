@@ -34,6 +34,11 @@ on:
   release:
     types: [released]
   workflow_dispatch:
+    inputs:
+      tag_to_release:
+        description: 'The git tag to build and release (e.g., 0.3.0)'
+        required: true
+        type: string
 
 env:
   PYTHON_VERSION: "3.11"
@@ -233,11 +238,13 @@ jobs:
     name: Build Package
     needs: [pre-commit, test, security-scan]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'release' && github.event.action == 'published')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'release' && github.event.action == 'published') || (github.event_name == 'workflow_dispatch')
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag_to_release || github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -276,7 +283,7 @@ jobs:
     name: Release to PyPI
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'release' && github.event.action == 'released'
+    if: (github.event_name == 'release' && github.event.action == 'published') || (github.event_name == 'workflow_dispatch')
     environment: pypi-publish
 
     steps:
