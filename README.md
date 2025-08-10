@@ -1,6 +1,6 @@
 # ValidateLite
 
-A flexible, extensible command-line tool for automated data quality validation, profiling, and rule-based checks across diverse data sources. Designed for data engineers, analysts, and developers to ensure data reliability and compliance in modern data pipelines.
+ValidateLite is a lightweight, zero-config Python CLI tool for validating data quality across files and SQL databases - built for modern data pipelines and CI/CD automation. This python data validation tool is a flexible, extensible command-line tool for automated data quality validation, profiling, and rule-based checks across diverse data sources. Designed for data engineers, analysts, and developers to ensure data reliability and compliance in modern data pipelines.
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -21,7 +21,7 @@ Follow the journey of building ValidateLite through our development blog posts:
 
 ### For Regular Users
 
-**Option 1: Install from PyPI (Recommended)**
+**Option 1: Install from [PyPI](https://pypi.org/project/validatelite/) (Recommended)**
 ```bash
 pip install validatelite
 vlite --help
@@ -170,6 +170,31 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 
 ### Development Setup
 For detailed development setup instructions, see [DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md).
+
+---
+
+## ❓ FAQ: Why ValidateLite?
+
+### Q: What is ValidateLite, in one sentence?
+A: ValidateLite is a lightweight, zero-config Python CLI tool for data quality validation, profiling, and rule-based checks across CSV files and SQL databases.
+
+### Q: How is it different from other tools like Great Expectations or Pandera?
+A: Unlike heavyweight frameworks, ValidateLite is built for simplicity and speed — no code generation, no DSLs, just one command to validate your data in pipelines or ad hoc scripts.
+
+### Q: What kind of data sources are supported?
+A: Currently supports CSV, Excel, and SQL databases (MySQL, PostgreSQL, SQLite) with planned support for more cloud and file-based sources.
+
+### Q: Who should use this?
+A: Data engineers, analysts, and Python developers who want to integrate fast, automated data quality checks into ETL jobs, CI/CD pipelines, or local workflows.
+
+### Q: Does it require writing Python code?
+A: Not at all. You can specify rules inline in the command line or via a simple JSON config file — no coding needed.
+
+### Q: Is ValidateLite open-source?
+A: Yes! It’s licensed under MIT and available on GitHub — stars and contributions are welcome!
+
+### Q: How can I use it in CI/CD?
+A: Just install via pip and add a vlite check ... step in your data pipeline or GitHub Action. It returns exit codes you can use for gating deployments.
 
 ---
 

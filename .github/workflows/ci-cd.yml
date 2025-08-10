@@ -46,6 +46,7 @@ env:
 jobs:
   pre-commit:
     name: Pre-commit Checks
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -79,6 +80,7 @@ jobs:
 
   test:
     name: Test with Both Databases
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     env:
       # Database URLs for testing (using environment variables for security)
@@ -195,6 +197,7 @@ jobs:
 
   security-scan:
     name: Security Scan
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -238,7 +241,7 @@ jobs:
     name: Build Package
     needs: [pre-commit, test, security-scan]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'release' && github.event.action == 'published') || (github.event_name == 'workflow_dispatch')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'release' && github.event.action == 'released') || (github.event_name == 'workflow_dispatch')
 
     steps:
       - name: Checkout code
