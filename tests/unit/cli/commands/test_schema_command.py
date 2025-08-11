@@ -83,3 +83,88 @@ class TestSchemaCommandSkeleton:
         # Click usage error exit code is >= 2
         assert result.exit_code >= 2
         assert "Invalid JSON" in result.output
+
+
+class TestSchemaCommandValidation:
+    def _write_tmp_file(self, tmp_path: Path, name: str, content: str) -> str:
+        file_path = tmp_path / name
+        file_path.write_text(content, encoding="utf-8")
+        return str(file_path)
+
+    def test_warn_on_top_level_table_ignored(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        data_path = self._write_tmp_file(tmp_path, "data.csv", "id\n1\n")
+        rules = {
+            "table": "users",
+            "rules": [
+                {"field": "id", "type": "integer", "required": True},
+            ],
+        }
+        rules_path = self._write_tmp_file(tmp_path, "schema.json", json.dumps(rules))
+
+        result = runner.invoke(
+            cli_app, ["schema", data_path, "--rules", rules_path, "--output", "json"]
+        )
+        # exit code from skeleton remains success
+        assert result.exit_code == 0
+        # warning emitted to stderr
+        assert "table' is ignored" in (result.stderr or "")
+
+    def test_rules_must_be_array(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        data_path = self._write_tmp_file(tmp_path, "data.csv", "id\n1\n")
+        rules_path = self._write_tmp_file(tmp_path, "schema.json", json.dumps({}))
+
+        result = runner.invoke(cli_app, ["schema", data_path, "--rules", rules_path])
+        assert result.exit_code >= 2
+        assert "must be an array" in result.output
+
+    def test_rules_item_requires_field(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        data_path = self._write_tmp_file(tmp_path, "data.csv", "id\n1\n")
+        bad = {"rules": [{"type": "integer"}]}
+        rules_path = self._write_tmp_file(tmp_path, "schema.json", json.dumps(bad))
+
+        result = runner.invoke(cli_app, ["schema", data_path, "--rules", rules_path])
+        assert result.exit_code >= 2
+        assert "field must be a non-empty string" in result.output
+
+    def test_type_must_be_supported_string(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        data_path = self._write_tmp_file(tmp_path, "data.csv", "id\n1\n")
+        bad = {"rules": [{"field": "id", "type": "number"}]}
+        rules_path = self._write_tmp_file(tmp_path, "schema.json", json.dumps(bad))
+
+        result = runner.invoke(cli_app, ["schema", data_path, "--rules", rules_path])
+        assert result.exit_code >= 2
+        assert "type 'number' is not supported" in result.output
+
+    def test_required_must_be_boolean(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        data_path = self._write_tmp_file(tmp_path, "data.csv", "id\n1\n")
+        bad = {"rules": [{"field": "id", "required": "yes"}]}
+        rules_path = self._write_tmp_file(tmp_path, "schema.json", json.dumps(bad))
+
+        result = runner.invoke(cli_app, ["schema", data_path, "--rules", rules_path])
+        assert result.exit_code >= 2
+        assert "required must be a boolean" in result.output
+
+    def test_enum_must_be_array(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        data_path = self._write_tmp_file(tmp_path, "data.csv", "id\n1\n")
+        bad = {"rules": [{"field": "flag", "enum": "01"}]}
+        rules_path = self._write_tmp_file(tmp_path, "schema.json", json.dumps(bad))
+
+        result = runner.invoke(cli_app, ["schema", data_path, "--rules", rules_path])
+        assert result.exit_code >= 2
+        assert "enum must be an array" in result.output
+
+    def test_min_max_must_be_numeric(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        data_path = self._write_tmp_file(tmp_path, "data.csv", "id\n1\n")
+        bad = {"rules": [{"field": "age", "type": "integer", "min": "0"}]}
+        rules_path = self._write_tmp_file(tmp_path, "schema.json", json.dumps(bad))
+
+        result = runner.invoke(cli_app, ["schema", data_path, "--rules", rules_path])
+        assert result.exit_code >= 2
+        assert "min must be numeric" in result.output
