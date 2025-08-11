@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 import click
 
 from shared.schema.rule_schema import RuleSchema
+from shared.utils.console import safe_echo
 from shared.utils.logger import get_logger
 
 
@@ -42,7 +43,7 @@ class OutputFormatter:
         """Display validation results with appropriate formatting."""
 
         if not results:
-            click.echo("❌ No results to display")
+            self._echo("❌ No results to display")
             return
 
         # Create a mapping from rule_id to rule object
@@ -138,10 +139,10 @@ class OutputFormatter:
         self, source: str, total_records: int, total_rules: int
     ) -> None:
         """Display validation header."""
-        click.echo(f"\n✓ Checking {source} ({total_records:,} records)")
+        self._echo(f"\n✓ Checking {source} ({total_records:,} records)")
         if self.verbose:
-            click.echo(f"│ Rules: {total_rules} validation rules loaded")
-            click.echo("")
+            self._echo(f"│ Rules: {total_rules} validation rules loaded")
+            self._echo("")
 
     def _display_quiet_results(
         self, stats: Dict[str, Any], execution_time: float
@@ -156,7 +157,7 @@ class OutputFormatter:
             f"({stats['overall_error_rate']:.2f}% error rate) - {execution_time:.2f}s"
         )
 
-        click.echo(click.style(summary, fg=status_color))
+        self._echo(summary, fg=status_color)
 
     def _display_normal_results(
         self,
@@ -166,18 +167,18 @@ class OutputFormatter:
         rule_map: Dict[str, RuleSchema],
     ) -> None:
         """Display normal results format."""
-        click.echo("Results:")
+        self._echo("Results:")
 
         for result in results:
             self._display_rule_result(result, rule_map, show_samples=False)
 
         # Display summary
-        click.echo(
+        self._echo(
             f"\nSummary: {stats['passed_rules']} passed, "
             f"{stats['failed_rules']} failed "
             f"({stats['overall_error_rate']:.2f}% overall error rate)"
         )
-        click.echo(f"Time: {execution_time:.2f}s")
+        self._echo(f"Time: {execution_time:.2f}s")
 
     def _display_verbose_results(
         self,
@@ -187,22 +188,22 @@ class OutputFormatter:
         rule_map: Dict[str, RuleSchema],
     ) -> None:
         """Display detailed verbose results."""
-        click.echo("Results:")
+        self._echo("Results:")
 
         for result in results:
             self._display_rule_result(result, rule_map, show_samples=True)
 
         # Display detailed summary
-        click.echo(
+        self._echo(
             f"\nSummary: {stats['passed_rules']} passed, "
             f"{stats['failed_rules']} failed "
             f"({stats['overall_error_rate']:.2f}% overall error rate)"
         )
-        click.echo(f"Processing time: {execution_time:.2f}s")
+        self._echo(f"Processing time: {execution_time:.2f}s")
 
         # Display memory usage if available
         if "memory_used_mb" in stats:
-            click.echo(f"Memory used: {stats['memory_used_mb']:.1f} MB")
+            self._echo(f"Memory used: {stats['memory_used_mb']:.1f} MB")
 
     def _display_rule_result(
         self,
@@ -293,10 +294,10 @@ class OutputFormatter:
                 (failed_records / total_records * 100) if total_records > 0 else 0
             )
             result_line = f"{symbol} {rule_desc}: FAILED ({failed_records} failures)"
-            click.echo(click.style(result_line, fg=color))
+            self._echo(result_line, fg=color)
 
             # Failure details
-            click.echo(
+            self._echo(
                 f"  │ Failure rate: {failure_rate:.2f}% "
                 f"({failed_records} out of {total_records:,})"
             )
@@ -307,23 +308,23 @@ class OutputFormatter:
 
             # Performance info in verbose mode
             if show_samples and execution_time > 0:
-                click.echo(f"  │ Performance: {execution_time:.2f}s")
+                self._echo(f"  │ Performance: {execution_time:.2f}s")
 
             return
         else:
             # Error case
             result_line = f"{symbol} {rule_desc}: ERROR"
-            click.echo(click.style(result_line, fg=color))
-            click.echo(f"  │ Error: {error_message}")
+            self._echo(result_line, fg=color)
+            self._echo(f"  │ Error: {error_message}")
             return
 
         # For passed rules
-        click.echo(click.style(result_line, fg=color))
+        self._echo(result_line, fg=color)
 
         if show_samples:
-            click.echo(f"  │ Checked {total_records:,} records, all valid")
+            self._echo(f"  │ Checked {total_records:,} records, all valid")
             if execution_time > 0:
-                click.echo(f"  │ Performance: {execution_time:.2f}s")
+                self._echo(f"  │ Performance: {execution_time:.2f}s")
 
     def _display_failure_samples(self, sample_data: List[Dict[str, Any]]) -> None:
         """Display failure sample data."""
@@ -333,7 +334,7 @@ class OutputFormatter:
         max_samples = 20  # Limit sample display
         samples_to_show = sample_data[:max_samples]
 
-        click.echo(
+        self._echo(
             f"  │ Sample failures (showing first {len(samples_to_show)} of "
             f"{len(sample_data)}):"
         )
@@ -353,36 +354,36 @@ class OutputFormatter:
                 # Add validation details if available
                 details = sample.get("validation_details", "")
                 if details:
-                    click.echo(f"  │   {row_info}: {value_str} ({details})")
+                    self._echo(f"  │   {row_info}: {value_str} ({details})")
                 else:
-                    click.echo(f"  │   {row_info}: {value_str}")
+                    self._echo(f"  │   {row_info}: {value_str}")
             else:
-                click.echo(f"  │   {row_info}: {sample}")
+                self._echo(f"  │   {row_info}: {sample}")
 
         # Show if there are more samples
         if len(sample_data) > max_samples:
             remaining = len(sample_data) - max_samples
-            click.echo(f"  │   ... and {remaining} more failures")
+            self._echo(f"  │   ... and {remaining} more failures")
 
     def display_error(
         self, error_msg: str, details: Optional[Dict[str, Any]] = None
     ) -> None:
         """Display error message."""
-        click.echo(click.style(f"❌ Error: {error_msg}", fg="red"), err=True)
+        self._echo(f"❌ Error: {error_msg}", fg="red", err=True)
 
         if details and self.verbose:
             for key, value in details.items():
-                click.echo(f"   {key}: {value}", err=True)
+                self._echo(f"   {key}: {value}", err=True)
 
     def display_warning(self, warning_msg: str) -> None:
         """Display warning message."""
         if not self.quiet:
-            click.echo(click.style(f"⚠ Warning: {warning_msg}", fg="yellow"))
+            self._echo(f"⚠ Warning: {warning_msg}", fg="yellow")
 
     def display_info(self, info_msg: str) -> None:
         """Display info message."""
         if not self.quiet and self.verbose:
-            click.echo(click.style(f"ℹ {info_msg}", fg="blue"))
+            self._echo(f"ℹ {info_msg}", fg="blue")
 
     # ==============================
     #  Modern Formatter API (String based)
@@ -795,8 +796,16 @@ class OutputFormatter:
         else:
             raise ValueError(f"Unknown output mode: {mode}")
 
-        click.echo(output)
+        self._echo(output)
 
     def print_error(self, message: str) -> None:
         """Convenience wrapper to print error messages to stderr."""
-        click.echo(message, err=True)
+        self._echo(message, err=True)
+
+    # ==============================
+    # Internal echo helpers
+    # ==============================
+
+    def _echo(self, text: str, *, fg: Optional[str] = None, err: bool = False) -> None:
+        """Echo text with color and encoding safety."""
+        safe_echo(text, fg=fg, err=err)

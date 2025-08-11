@@ -10,6 +10,7 @@ import sys
 import click
 
 from shared.config.logging_config import get_logging_config
+from shared.utils.console import safe_echo
 from shared.utils.error_handler import handle_exception
 from shared.utils.logger import get_logger, setup_logging
 from shared.utils.logging_setup import setup_logging as setup_logging_legacy
@@ -77,7 +78,7 @@ def cli_app(ctx: click.Context) -> None:
     """
     # If no command provided, show help
     if ctx.invoked_subcommand is None:
-        click.echo(ctx.get_help())
+        safe_echo(ctx.get_help())
         ctx.exit()
 
 
@@ -152,7 +153,7 @@ def rules_help() -> None:
     # Database check
     vlite-cli check mysql://user:pass@host/db.users --rule "not_null(id)"
     """
-    click.echo(help_text)
+    safe_echo(help_text)
 
 
 def main() -> None:
@@ -165,7 +166,7 @@ def main() -> None:
     except Exception as e:
         logger.error(f"CLI application error: {str(e)}")
         error_response = handle_exception(e, context="CLI Application", logger=logger)
-        click.echo(f"Error: {error_response['message']}", err=True)
+        safe_echo(f"Error: {error_response['message']}", err=True)
         sys.exit(1)
 
 
