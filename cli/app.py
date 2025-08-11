@@ -18,6 +18,7 @@ from shared.utils.logging_setup import setup_logging as setup_logging_legacy
 setup_logging(get_logging_config().model_dump())
 
 from .commands.check import check_command  # noqa: E402
+from .commands.schema import schema_command  # noqa: E402
 
 # Initialize logger for CLI
 logger = get_logger(__name__)
@@ -82,6 +83,7 @@ def cli_app(ctx: click.Context) -> None:
 
 # Register the check command
 cli_app.add_command(check_command)
+cli_app.add_command(schema_command)
 
 
 @cli_app.command("rules-help")
