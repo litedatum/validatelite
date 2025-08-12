@@ -8,6 +8,7 @@ This document provides detailed instructions on how to use ValidateLite for data
 
 - [Installation](#installation)
 - [Core Command: `check`](#core-command-check)
+- [Schema Command: `schema`](#schema-command-schema)
 - [Specifying the Data Source](#specifying-the-data-source)
   - [File-Based Sources](#file-based-sources)
   - [Database Sources](#database-sources)
@@ -60,6 +61,67 @@ vlite check <data_source> [options]
 
 - **`<data_source>`**: The path to a file or a database connection string. (Required)
 - **`[options]`**: Options to specify rules, control output verbosity, etc.
+
+---
+## Schema Command: `schema`
+
+Validate a table against a JSON schema file. The CLI decomposes the schema into atomic rules (schema/type, not_null, range, enum, etc.), executes them, and aggregates results with root-cause prioritization and column-grouped reporting.
+
+### Basic Syntax
+
+```bash
+vlite schema <data_source> --rules <schema_file.json> [--output table|json] [--verbose]
+```
+
+- `<data_source>`: Database/table identifier; the table is derived from the URL (single-table in v1), e.g. `mysql://user:pass@host:3306/db.table`.
+- `--rules`: Path to a JSON schema file with a top-level `rules` array. Multi-table is not supported in v1.
+- `--output`: `table` (default) or `json`.
+- `--verbose`: Show more details in table mode.
+
+### Schema File (v1) - Minimal Structure
+
+```json
+{
+  "rules": [
+    { "field": "id", "type": "integer", "required": true },
+    { "field": "age", "type": "integer", "min": 0, "max": 120 },
+    { "field": "gender", "type": "string", "enum": ["M", "F"] }
+  ],
+  "strict_mode": true,
+  "case_insensitive": false
+}
+```
+
+Notes:
+- Top-level `table` is ignored; the table is inferred from `<data_source>`. If present, a warning is emitted.
+- Supported `type`: `string|integer|float|boolean|date|datetime`.
+- For each rule item:
+  - `required: true` → emits a NOT_NULL rule.
+  - `min/max` → emits a RANGE rule.
+  - `enum` → emits an ENUM rule.
+  - `type` contributes to a table-level SCHEMA rule with `expected_type`.
+
+### Output
+
+- Table mode (default): Column-grouped summary. If a column is missing, only show the missing message and skip dependent checks. For type mismatch, similarly skip dependent checks.
+- JSON mode: Aggregated structure including `summary`, raw `results`, per-column `fields`, and `schema_extras` when `strict_mode=true`.
+- JSON schema (output contract): See `docs/schemas/schema_results.schema.json`.
+
+#### Examples
+
+```bash
+# Table mode
+vlite schema "mysql://root:root123@localhost:3306/data_quality.customers" --rules test_data/schema.json
+
+# JSON mode (machine-readable)
+vlite schema "mysql://.../data_quality.customers" --rules test_data/schema.json --output json
+```
+
+### Exit Codes
+
+- `0`: All checks passed.
+- `1`: One or more checks failed (or --fail-on-error set and an error occurred).
+- `>=2`: Usage error (e.g., invalid JSON, unsupported schema structure).
 
 ---
 
