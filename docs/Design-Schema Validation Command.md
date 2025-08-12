@@ -29,6 +29,224 @@ Introduce a `schema` CLI command that parses a JSON schema rules file, decompose
   - Ensure `DataType` enum (or equivalent) exists in `shared/enums` with STRING, INTEGER, FLOAT, BOOLEAN, DATE, DATETIME, etc.
   - Use `shared/utils` for logging and error handling, not standard library logging directly.
 
+### RuleSchema Specification (authoritative)
+
+This section defines the exact format of a rule object as consumed/produced by the system so that the CLI decomposition and the core rule engine share the same understanding.
+
+- All rule objects must conform to `shared.schema.rule_schema.RuleSchema`, which extends `shared.schema.base.RuleBase`.
+- All enum fields use values defined in `shared/enums` and must be serialized as uppercase strings.
+- Connection context is NOT included at the rule level; it is supplied at execution time by the engine. Do not add any top-level `connection_id`.
+
+Fields (top-level):
+
+- id: string (UUID). Optional when creating; auto-generated if omitted.
+- name: string (1..100), required.
+- description: string (<=500), optional.
+- type: `RuleType` (required). One of: SCHEMA, NOT_NULL, UNIQUE, RANGE, LENGTH, ENUM, REGEX, DATE_FORMAT.
+- target: `RuleTarget` (required). Single-table in v1.
+  - entities: array with exactly one `TargetEntity` in v1
+    - database: string, required
+    - table: string, required
+    - column: string, optional for table-level rules
+    - connection_id: null (reserved)
+    - alias: null (reserved)
+  - relationship_type: "single_table" in v1
+  - join_conditions: [] (reserved)
+- parameters: object, required (may be empty). The canonical keys per rule type are specified below.
+- cross_db_config: null (reserved)
+- threshold: number in [0.0, 100.0], optional. Interpreted as success threshold where supported.
+- category: `RuleCategory` (required). CLI should derive from rule type as specified below.
+- severity: `SeverityLevel` (required). Default MEDIUM if not specified.
+- action: `RuleAction` (required). Default LOG if not specified.
+- is_active: boolean, default true.
+- tags: array of strings, optional.
+- template_id: UUID, optional.
+- validation_error: string, optional (execution-time use only).
+
+Enum sources:
+
+- RuleType: `shared/enums/rule_types.py`
+- RuleCategory: `shared/enums/rule_categories.py`
+- RuleAction: `shared/enums/rule_actions.py`
+- SeverityLevel: `shared/enums/severity_levels.py`
+
+Canonical parameter keys per rule type:
+
+- SCHEMA (table-level): { columns: { [column_name]: { expected_type: DataType } }, strict_mode?: boolean, case_insensitive?: boolean }
+  - Purpose: batch-validate existence and data type for all declared columns of one table in a single rule execution.
+  - columns is required; each entry requires expected_type (STRING|INTEGER|FLOAT|BOOLEAN|DATE|DATETIME).
+  - strict_mode (optional): when true, fail if extra columns exist in the actual table that are not declared.
+  - case_insensitive (optional): when true, compare column names case-insensitively.
+
+- NOT_NULL: {}
+- UNIQUE: {}
+- RANGE: { min_value?: number, max_value?: number }
+  - At least one of min_value/max_value must be present.
+  - Numeric 0 is valid and must not be dropped.
+- LENGTH: { min_length?: integer, max_length?: integer, exact_length?: integer }
+  - At least one of the three keys must be present.
+- ENUM: { allowed_values: array }
+  - Non-empty list required.
+- REGEX: { pattern: string }
+  - Must be a valid regex pattern for the target dialect/engine.
+- DATE_FORMAT: { format: string }
+  - A Python/strftime-compatible date format string understood by the engine.
+
+Optional, cross-cutting parameter keys:
+
+- filter_condition: string. Optional SQL-like predicate to pre-filter the dataset.
+
+Category derivation from type (CLI default mapping):
+
+- SCHEMA → VALIDITY
+- NOT_NULL → COMPLETENESS
+- UNIQUE → UNIQUENESS
+- RANGE, LENGTH, ENUM → VALIDITY
+- REGEX, DATE_FORMAT → VALIDITY or FORMAT. In v1 use:
+  - REGEX → VALIDITY
+  - DATE_FORMAT → FORMAT label for display is acceptable, but store category as VALIDITY unless a dedicated FORMAT category is introduced later.
+
+Engine dictionary format (serialization used between layers) matches `RuleSchema.to_engine_dict()`:
+
+```json
+{
+  "id": "<uuid>",
+  "name": "<rule_name>",
+  "type": "NOT_NULL|UNIQUE|RANGE|LENGTH|ENUM|REGEX|DATE_FORMAT",
+  "target": {
+    "database": "<db>",
+    "table": "<table>",
+    "column": "<column_or_null>"
+  },
+  "parameters": { /* see canonical keys above */ },
+  "threshold": 0.0,
+  "severity": "LOW|MEDIUM|HIGH|CRITICAL",
+  "action": "LOG|ALERT|BLOCK|QUARANTINE|CORRECT|IGNORE",
+  "is_active": true,
+  "validation_error": null
+}
+```
+
+CLI decomposition rules → RuleSchema mapping
+
+- Group schema file items by table. For each table, generate ONE SCHEMA rule with parameters.columns including all `{ field, type }` mappings:
+  - Type: when `type` is present, add `columns[field] = { expected_type: <DataType> }` into the table's SCHEMA rule.
+  - CLI maps input type strings to `DataType` and writes them as uppercase strings.
+  - required: true → emit a separate NOT_NULL rule (per column) in addition to the table-level SCHEMA rule.
+  - enum: [..] → emit a separate ENUM rule (per column).
+  - min/max (numeric) → emit a separate RANGE rule (per column).
+  - regex/date format (extended schema) → emit REGEX/DATE_FORMAT (per column).
+  - Target mapping: for SCHEMA, set `target.entities[0].column = null` (table-level). For per-column rules (NOT_NULL/ENUM/RANGE/...), set column to the field name.
+  - Category, severity, action defaults: derive category from type per mapping above; severity default MEDIUM; action default ALERT for CLI-generated rules unless specified by user flag.
+
+SchemaRule (existence/type, table-level) example
+
+```json
+{
+  "name": "schema_users",
+  "type": "SCHEMA",
+  "target": {
+    "entities": [
+      { "database": "sales", "table": "users", "column": null, "connection_id": null, "alias": null }
+    ],
+    "relationship_type": "single_table",
+    "join_conditions": []
+  },
+  "parameters": {
+    "columns": {
+      "id": { "expected_type": "INTEGER" },
+      "email": { "expected_type": "STRING" },
+      "created_at": { "expected_type": "DATETIME" }
+    },
+    "strict_mode": true,
+    "case_insensitive": false
+  },
+  "category": "VALIDITY",
+  "severity": "MEDIUM",
+  "action": "ALERT",
+  "is_active": true
+}
+```
+
+Implementation note: introducing SCHEMA requires adding `SCHEMA` to `shared/enums/rule_types.py` and registering handling in the core engine. Core should fetch table metadata once, compare declared columns against actual columns, and compute failures. For result semantics, interpret `dataset_metrics.total_records` as number of declared columns and `failed_records` as number of mismatched/missing/extra columns (per `strict_mode`).
+
+Examples
+
+1) NOT_NULL rule
+
+```json
+{
+  "name": "not_null_email",
+  "type": "NOT_NULL",
+  "target": {
+    "entities": [
+      { "database": "sales", "table": "users", "column": "email", "connection_id": null, "alias": null }
+    ],
+    "relationship_type": "single_table",
+    "join_conditions": []
+  },
+  "parameters": {},
+  "category": "COMPLETENESS",
+  "severity": "MEDIUM",
+  "action": "ALERT",
+  "is_active": true
+}
+```
+
+2) RANGE rule
+
+```json
+{
+  "name": "range_age",
+  "type": "RANGE",
+  "target": {
+    "entities": [
+      { "database": "hr", "table": "employees", "column": "age", "connection_id": null, "alias": null }
+    ],
+    "relationship_type": "single_table",
+    "join_conditions": []
+  },
+  "parameters": { "min_value": 0, "max_value": 120 },
+  "category": "VALIDITY",
+  "severity": "MEDIUM",
+  "action": "ALERT",
+  "is_active": true
+}
+```
+
+3) ENUM rule with filter
+
+```json
+{
+  "name": "enum_status",
+  "type": "ENUM",
+  "target": {
+    "entities": [
+      { "database": "sales", "table": "orders", "column": "status", "connection_id": null, "alias": null }
+    ],
+    "relationship_type": "single_table",
+    "join_conditions": []
+  },
+  "parameters": { "allowed_values": ["NEW", "PAID", "CANCELLED"], "filter_condition": "deleted_at IS NULL" },
+  "category": "VALIDITY",
+  "severity": "HIGH",
+  "action": "ALERT",
+  "is_active": true
+}
+```
+
+Validation rules (core enforcement):
+
+- RANGE: at least one of min_value/max_value must be provided; if both, min_value <= max_value and both numeric.
+- LENGTH: at least one of min_length, max_length, exact_length present.
+- ENUM: allowed_values must be a non-empty list.
+- REGEX: pattern must compile.
+
+Notes
+
+- RuleSchema introduces helper methods for compatibility and engine I/O, e.g., `to_engine_dict()` and `from_legacy_params()`. These do not change the canonical creation format above.
+- CLI should always use `shared/enums` for enum values, and `shared/utils` for logging/error/now.
+
 #### Data Types and Mapping
 - Minimal canonical set in v1: STRING, INTEGER, FLOAT, BOOLEAN, DATE, DATETIME. Length/precision are ignored.
 - CLI maps JSON `type` strings to `shared/enums.DataType`:
