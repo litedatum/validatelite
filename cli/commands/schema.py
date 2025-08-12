@@ -294,6 +294,50 @@ def _decompose_to_atomic_rules(payload: Dict[str, Any]) -> List[RuleSchema]:
     return atomic_rules
 
 
+def _build_prioritized_atomic_status(
+    *,
+    schema_result: Dict[str, Any] | None,
+    atomic_rules: List[RuleSchema],
+) -> Dict[str, Dict[str, str]]:
+    """Return a mapping rule_id -> {status, skip_reason} applying prioritization.
+
+    Prioritization per column:
+      1) If field missing → mark SCHEMA for that field as FAILED (implicit) and all
+         dependent rules (NOT_NULL/RANGE/ENUM) as SKIPPED (reason FIELD_MISSING).
+      2) If type mismatch → mark dependent rules as SKIPPED (reason TYPE_MISMATCH).
+      3) Otherwise, leave dependent rules to their engine-evaluated status.
+
+    We infer per-column status from schema_result.execution_plan.schema_details.
+    """
+    mapping: Dict[str, Dict[str, str]] = {}
+
+    # Build per-column guard from SCHEMA details
+    column_guard: Dict[str, str] = {}  # column -> NONE|FIELD_MISSING|TYPE_MISMATCH
+    if schema_result:
+        details = (
+            schema_result.get("execution_plan", {})
+            .get("schema_details", {})
+            .get("field_results", [])
+        )
+        for item in details:
+            col = str(item.get("column"))
+            code = str(item.get("failure_code", "NONE"))
+            column_guard[col] = code
+
+    # Apply skip to dependent rules
+    for r in atomic_rules:
+        if r.type == RuleType.SCHEMA:
+            continue
+        column = r.get_target_column() or ""
+        guard = column_guard.get(column, "NONE")
+        if guard == "FIELD_MISSING":
+            mapping[r.id] = {"status": "SKIPPED", "skip_reason": "FIELD_MISSING"}
+        elif guard == "TYPE_MISMATCH":
+            mapping[r.id] = {"status": "SKIPPED", "skip_reason": "TYPE_MISMATCH"}
+
+    return mapping
+
+
 def _safe_echo(text: str, *, err: bool = False) -> None:
     """Compatibility shim; delegate to shared safe_echo."""
     safe_echo(text, err=err)
@@ -386,16 +430,60 @@ def schema_command(
         results = asyncio.run(validator.validate())
         exec_seconds = (_now() - _exec_start).total_seconds()
 
-        # Output
+        # Aggregation and prioritization
+        schema_result_dict: Dict[str, Any] | None = None
+        try:
+            # Locate SCHEMA result
+            for r in results:
+                # r is ExecutionResultSchema
+                if hasattr(r, "rule_id"):
+                    # We need to find the SCHEMA rule id
+                    pass
+            # Build map rule id -> rule object for later
+            # rule_map = {rule.id: rule for rule in atomic_rules}
+            schema_rule = next(
+                (rule for rule in atomic_rules if rule.type == RuleType.SCHEMA), None
+            )
+            if schema_rule:
+                # Find matching result
+                for r in results:
+                    if str(getattr(r, "rule_id", "")) == str(schema_rule.id):
+                        schema_result_dict = (
+                            r.model_dump()
+                            if hasattr(r, "model_dump")
+                            else cast(Dict[str, Any], r)  # type: ignore[cast-any]
+                        )
+                        break
+
+            skip_map = _build_prioritized_atomic_status(
+                schema_result=schema_result_dict, atomic_rules=atomic_rules
+            )
+        except Exception:
+            skip_map = {}
+
+        # Apply skip map to JSON output only; table mode stays concise by design
         if output.lower() == "json":
+            enriched_results: List[Dict[str, Any]] = []
+            for r in results:
+                rd = (
+                    r.model_dump()
+                    if hasattr(r, "model_dump")
+                    else cast(Dict[str, Any], r)  # type: ignore[cast-any]
+                )
+                rule_id = str(rd.get("rule_id"))
+                if rule_id in skip_map and rd.get("status") == "PASSED":
+                    # Overwrite visual status to SKIPPED in JSON view for dependent
+                    # rules
+                    rd["status"] = skip_map[rule_id]["status"]
+                    rd["skip_reason"] = skip_map[rule_id]["skip_reason"]
+                enriched_results.append(rd)
+
             payload = {
                 "status": "ok",
                 "source": source,
                 "rules_file": rules_file,
                 "rules_count": len(atomic_rules),
-                "results": [
-                    r.model_dump() if hasattr(r, "model_dump") else r for r in results
-                ],
+                "results": enriched_results,
                 "execution_time_s": round(exec_seconds, 3),
             }
             _safe_echo(json.dumps(payload))
