@@ -32,7 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- None
+- feat(cli): add `schema` command skeleton
+- feat(cli): add minimal rules file validation for schema command (no jsonschema in v1)
+- feat(core): introduce `SCHEMA` rule type with table-level existence and type checks
 
 ### Changed
 - None

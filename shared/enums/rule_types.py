@@ -43,6 +43,9 @@ class RuleType(str, Enum):
     # Enum value checks
     ENUM = "ENUM"
 
+    # Schema checks (table-level): existence and type only
+    SCHEMA = "SCHEMA"
+
     # Business rules
     # CUSTOM_SQL = "CUSTOM_SQL"
     # BUSINESS_RULE = "BUSINESS_RULE"
@@ -77,6 +80,7 @@ class RuleType(str, Enum):
             cls.LENGTH: "validity",
             # cls.MIN_MAX: "validity",
             cls.ENUM: "validity",
+            cls.SCHEMA: "validity",
             # cls.CUSTOM_SQL: "business",
             # cls.BUSINESS_RULE: "business",
             # cls.COUNT: "statistical",
@@ -109,6 +113,7 @@ class RuleType(str, Enum):
             # cls.PHONE,
             # cls.URL,
             cls.DATE_FORMAT,
+            cls.SCHEMA,
         ]
 
     # @classmethod
@@ -163,5 +168,12 @@ class RuleType(str, Enum):
         Returns:
             bool: Whether it can be merged
         """
-        mergeable_types = [cls.NOT_NULL, cls.RANGE, cls.ENUM, cls.REGEX, cls.LENGTH]
+        mergeable_types = [
+            cls.NOT_NULL,
+            cls.RANGE,
+            cls.ENUM,
+            cls.REGEX,
+            cls.LENGTH,
+            # SCHEMA is table-level and should not be merged with column-level rules
+        ]
         return rule_type in mergeable_types

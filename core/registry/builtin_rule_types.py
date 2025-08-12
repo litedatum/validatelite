@@ -208,6 +208,49 @@ def register_builtin_rule_types() -> None:
         ],
     )
 
+    # Register SCHEMA rule type (table-level)
+    rule_type_registry.register_rule_type(
+        type_id="SCHEMA",
+        name="Schema Check",
+        description=(
+            "Validates existence and expected data types for declared columns "
+            "of a table (table-level rule)."
+        ),
+        category="validity",
+        icon="table_chart",
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "object",
+                        "properties": {"expected_type": {"type": "string"}},
+                        "required": ["expected_type"],
+                    },
+                },
+                "strict_mode": {"type": ["boolean", "null"]},
+                "case_insensitive": {"type": ["boolean", "null"]},
+            },
+            "required": ["columns"],
+        },
+        ui_schema={},
+        examples=[
+            {
+                "name": "users table schema",
+                "description": "Check id/email/created_at types",
+                "params": {
+                    "columns": {
+                        "id": {"expected_type": "INTEGER"},
+                        "email": {"expected_type": "STRING"},
+                        "created_at": {"expected_type": "DATETIME"},
+                    },
+                    "strict_mode": True,
+                },
+            }
+        ],
+    )
+
     # Register CUSTOM_SQL rule type
     rule_type_registry.register_rule_type(
         type_id="CUSTOM_SQL",
