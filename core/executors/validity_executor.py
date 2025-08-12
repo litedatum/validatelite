@@ -607,7 +607,19 @@ class ValidityExecutor(BaseExecutor):
         return f"SELECT COUNT(*) AS anomaly_count FROM {table} {where_clause}"
 
     async def _execute_schema_rule(self, rule: RuleSchema) -> ExecutionResultSchema:
-        """Execute SCHEMA rule (table-level existence and type checks)."""
+        """Execute SCHEMA rule (table-level existence and type checks).
+
+        Additionally attaches per-column details into the execution plan so the
+        CLI can apply prioritization/skip semantics:
+
+        execution_plan.schema_details = {
+            "field_results": [
+                {"column": str, "existence": "PASSED|FAILED", "type": "PASSED|FAILED",
+                 "failure_code": "FIELD_MISSING|TYPE_MISMATCH|NONE"}
+            ],
+            "extras": ["<extra_column>", ...]  # present when strict_mode
+        }
+        """
         import time
 
         from shared.database.query_executor import QueryExecutor
@@ -698,6 +710,7 @@ class ValidityExecutor(BaseExecutor):
             # Count failures across declared columns and strict-mode extras
             total_declared = len(columns_cfg)
             failures = 0
+            field_results: list[dict[str, str]] = []
 
             for declared_name, cfg in columns_cfg.items():
                 expected_type_raw = cfg.get("expected_type")
@@ -717,6 +730,14 @@ class ValidityExecutor(BaseExecutor):
                 # Existence check
                 if lookup_key not in actual_map:
                     failures += 1
+                    field_results.append(
+                        {
+                            "column": declared_name,
+                            "existence": "FAILED",
+                            "type": "SKIPPED",
+                            "failure_code": "FIELD_MISSING",
+                        }
+                    )
                     continue
 
                 # Type check
@@ -726,6 +747,23 @@ class ValidityExecutor(BaseExecutor):
                 )
                 if actual_canonical != expected_type:
                     failures += 1
+                    field_results.append(
+                        {
+                            "column": declared_name,
+                            "existence": "PASSED",
+                            "type": "FAILED",
+                            "failure_code": "TYPE_MISMATCH",
+                        }
+                    )
+                else:
+                    field_results.append(
+                        {
+                            "column": declared_name,
+                            "existence": "PASSED",
+                            "type": "PASSED",
+                            "failure_code": "NONE",
+                        }
+                    )
 
             if strict_mode:
                 # Fail for extra columns not declared
@@ -733,6 +771,8 @@ class ValidityExecutor(BaseExecutor):
                 actual_keys = set(actual_map.keys())
                 extras = actual_keys - declared_keys
                 failures += len(extras)
+            else:
+                extras = set()
 
             execution_time = time.time() - start_time
 
@@ -760,7 +800,13 @@ class ValidityExecutor(BaseExecutor):
                 error_message=None,
                 sample_data=None,
                 cross_db_metrics=None,
-                execution_plan={"execution_type": "metadata"},
+                execution_plan={
+                    "execution_type": "metadata",
+                    "schema_details": {
+                        "field_results": field_results,
+                        "extras": sorted(extras) if extras else [],
+                    },
+                },
                 started_at=datetime.fromtimestamp(start_time),
                 ended_at=datetime.fromtimestamp(time.time()),
             )
