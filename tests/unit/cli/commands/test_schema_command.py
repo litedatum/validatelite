@@ -6,9 +6,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 from click.testing import CliRunner
 
 from cli.app import cli_app
+from cli.core.data_validator import ExecutionResultSchema
 
 
 def _write_tmp_file(tmp_path: Path, name: str, content: str) -> str:
@@ -52,6 +54,58 @@ class TestSchemaCommandSkeleton:
         payload = json.loads(result.output)
         assert payload["status"] == "ok"
         assert payload["rules_count"] == 0
+
+    def test_output_json_declared_columns_always_listed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Patch decomposition to include a SCHEMA rule that declares a column not in results
+        from shared.enums import RuleType
+        from shared.schema.rule_schema import RuleSchema
+        from tests.shared.builders import test_builders
+
+        schema_rule: RuleSchema = (
+            test_builders.TestDataBuilder.rule()
+            .with_name("schema")
+            .with_type(RuleType.SCHEMA)
+            .with_target("", "", "id")
+            .with_parameter("columns", {"id": {"expected_type": "INTEGER"}})
+            .build()
+        )
+
+        monkeypatch.setattr(
+            "cli.commands.schema._decompose_to_atomic_rules",
+            lambda payload: [schema_rule],
+        )
+
+        class DummyValidator:
+            async def validate(self) -> list[ExecutionResultSchema]:
+                # Return no results to simulate missing schema details
+                return []
+
+        monkeypatch.setattr("cli.commands.schema.DataValidator", DummyValidator)
+
+        runner = CliRunner()
+        data_path = _write_tmp_file(tmp_path, "data.csv", "id\n1\n")
+        rules_path = _write_tmp_file(
+            tmp_path,
+            "schema.json",
+            json.dumps({"rules": [{"field": "id", "type": "integer"}]}),
+        )
+
+        result = runner.invoke(
+            cli_app, ["schema", data_path, "--rules", rules_path, "--output", "json"]
+        )
+        # No failures but explicit -- in this setup lack of results implies exit 0
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        # Declared column should still appear with UNKNOWN statuses
+        fields = {f["column"]: f for f in payload["fields"]}
+        assert "id" in fields
+        assert fields["id"]["checks"]["existence"]["status"] in {
+            "UNKNOWN",
+            "PASSED",
+            "FAILED",
+        }
 
     def test_fail_on_error_sets_exit_code_1(self, tmp_path: Path) -> None:
         runner = CliRunner()
