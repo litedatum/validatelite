@@ -4,6 +4,7 @@ import pytest
 
 from core.executors.validity_executor import ValidityExecutor
 from shared.enums import RuleType
+from shared.exceptions.exception_system import RuleExecutionError
 from shared.schema.connection_schema import ConnectionSchema
 from shared.schema.rule_schema import RuleSchema
 from tests.shared.builders.test_builders import TestDataBuilder
@@ -132,3 +133,43 @@ async def test_schema_rule_strict_mode_counts_extras(
     assert result.status == "FAILED"
     assert result.dataset_metrics[0].total_records == 1
     assert result.dataset_metrics[0].failed_records == 2
+
+
+@pytest.mark.asyncio
+async def test_schema_rule_case_insensitive_matching(
+    mock_connection: ConnectionSchema,
+) -> None:
+    # Case-insensitive should match Email vs email and map VARCHAR to STRING
+    rule = build_schema_rule(
+        {"Email": {"expected_type": "STRING"}}, strict_mode=False, case_insensitive=True
+    )
+
+    executor = ValidityExecutor(mock_connection, test_mode=True)
+
+    columns = [
+        {"name": "email", "type": "VARCHAR(255)"},
+    ]
+
+    with patch.object(executor, "get_engine") as mock_get_engine, patch(
+        "shared.database.query_executor.QueryExecutor"
+    ) as mock_qe_class:
+        mock_engine = AsyncMock()
+        mock_get_engine.return_value = mock_engine
+        mock_qe = AsyncMock()
+        mock_qe.get_column_list.return_value = columns
+        mock_qe_class.return_value = mock_qe
+
+        result = await executor.execute_rule(rule)
+
+    assert result.status == "PASSED"
+    assert result.dataset_metrics[0].total_records == 1
+    assert result.dataset_metrics[0].failed_records == 0
+
+
+@pytest.mark.asyncio
+async def test_schema_rule_invalid_expected_type_rejected_on_creation(
+    mock_connection: ConnectionSchema,
+) -> None:
+    # Invalid expected_type should be rejected during RuleSchema validation
+    with pytest.raises(RuleExecutionError, match="Unsupported expected_type"):
+        build_schema_rule({"id": {"expected_type": "UNKNOWN_TYPE"}})

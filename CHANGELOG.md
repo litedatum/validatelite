@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - feat(cli): aggregated JSON output for schema command with summary/results/fields/schema_extras
 - docs: add JSON Schema for results at `docs/schemas/schema_results.schema.json`
 - tests(cli): comprehensive unit tests for `schema` command covering argument parsing, rules file validation, decomposition/mapping, aggregation priority, output formats (table/json), and exit codes (AC satisfied)
+ - tests(core): unit tests for `SCHEMA` rule covering normal/edge/error cases, strict type checks, and mypy compliance
 
 ### Changed
 - docs: update README and USAGE with schema command overview and detailed usage
