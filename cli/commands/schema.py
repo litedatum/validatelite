@@ -9,17 +9,19 @@ output aligned with the existing CLI style.
 from __future__ import annotations
 
 import json
-import sys
+from pathlib import Path
 from typing import Any, Dict, List, Tuple, cast
 
 import click
 
+from cli.core.data_validator import DataValidator
 from cli.core.source_parser import SourceParser
 from shared.enums import RuleAction, RuleCategory, RuleType, SeverityLevel
 from shared.enums.data_types import DataType
 from shared.schema.base import RuleTarget, TargetEntity
 from shared.schema.rule_schema import RuleSchema
 from shared.utils.console import safe_echo
+from shared.utils.datetime_utils import now as _now
 from shared.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -342,6 +344,493 @@ def _safe_echo(text: str, *, err: bool = False) -> None:
     safe_echo(text, err=err)
 
 
+def _maybe_echo_analyzing(source: str, output: str) -> None:
+    """Emit analyzing line unless JSON output."""
+    if str(output).lower() != "json":
+        _safe_echo(f"🔍 Analyzing source: {source}", err=True)
+
+
+def _guard_empty_source_file(source: str) -> None:
+    """Raise a ClickException if a provided file source is empty."""
+    potential_path = Path(source)
+    if potential_path.exists() and potential_path.is_file():
+        if potential_path.stat().st_size == 0:
+            raise click.ClickException(
+                f"Error: Source file '{source}' is empty – nothing to validate."
+            )
+
+
+def _read_rules_payload(rules_file: str) -> Dict[str, Any]:
+    """Read and parse JSON rules file, raising UsageError on invalid JSON."""
+    try:
+        with open(rules_file, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except json.JSONDecodeError as e:
+        raise click.UsageError(f"Invalid JSON in rules file: {rules_file}") from e
+    return cast(Dict[str, Any], payload)
+
+
+def _emit_warnings(warnings: List[str]) -> None:
+    for msg in warnings:
+        _safe_echo(f"⚠️ Warning: {msg}", err=True)
+
+
+def _early_exit_when_no_rules(
+    *, source: str, rules_file: str, output: str, fail_on_error: bool
+) -> None:
+    """Emit minimal output and exit when no rules are present."""
+    if output.lower() == "json":
+        payload = {
+            "status": "ok",
+            "source": source,
+            "rules_file": rules_file,
+            "rules_count": 0,
+            "summary": {
+                "total_rules": 0,
+                "passed_rules": 0,
+                "failed_rules": 0,
+                "skipped_rules": 0,
+                "total_failed_records": 0,
+                "execution_time_s": 0.0,
+            },
+            "results": [],
+            "fields": [],
+        }
+        _safe_echo(json.dumps(payload))
+        raise click.exceptions.Exit(1 if fail_on_error else 0)
+    else:
+        _safe_echo(f"✓ Checking {source} (0 records)")
+        raise click.exceptions.Exit(1 if fail_on_error else 0)
+
+
+def _create_validator(
+    *,
+    source_config: Any,
+    atomic_rules: List[RuleSchema] | List[Dict[str, Any]],
+    core_config: Any,
+    cli_config: Any,
+) -> Any:
+    try:
+        return DataValidator(
+            source_config=source_config,
+            rules=cast(List[RuleSchema | Dict[str, Any]], atomic_rules),
+            core_config=core_config,
+            cli_config=cli_config,
+        )
+    except TypeError:
+        return DataValidator()  # type: ignore[call-arg]
+
+
+def _run_validation(validator: Any) -> Tuple[List[Any], float]:
+    import asyncio
+
+    start = _now()
+    results = asyncio.run(validator.validate())
+    exec_seconds = (_now() - start).total_seconds()
+    return results, exec_seconds
+
+
+def _extract_schema_result_dict(
+    *, atomic_rules: List[RuleSchema], results: List[Any]
+) -> Dict[str, Any] | None:
+    try:
+        schema_rule = next(
+            (rule for rule in atomic_rules if rule.type == RuleType.SCHEMA), None
+        )
+        if not schema_rule:
+            return None
+        for r in results:
+            rid = ""
+            if hasattr(r, "rule_id"):
+                try:
+                    rid = str(getattr(r, "rule_id"))
+                except Exception:
+                    rid = ""
+            elif isinstance(r, dict):
+                rid = str(r.get("rule_id", ""))
+            if rid == str(schema_rule.id):
+                return (
+                    r.model_dump()
+                    if hasattr(r, "model_dump")
+                    else cast(Dict[str, Any], r)
+                )
+        return None
+    except Exception:
+        return None
+
+
+def _compute_skip_map(
+    *, atomic_rules: List[RuleSchema], schema_result_dict: Dict[str, Any] | None
+) -> Dict[str, Dict[str, str]]:
+    try:
+        return _build_prioritized_atomic_status(
+            schema_result=schema_result_dict, atomic_rules=atomic_rules
+        )
+    except Exception:
+        return {}
+
+
+def _emit_json_output(
+    *,
+    source: str,
+    rules_file: str,
+    atomic_rules: List[RuleSchema],
+    results: List[Any],
+    skip_map: Dict[str, Dict[str, str]],
+    schema_result_dict: Dict[str, Any] | None,
+    exec_seconds: float,
+) -> None:
+    enriched_results: List[Dict[str, Any]] = []
+    for r in results:
+        rd: Dict[str, Any]
+        if hasattr(r, "model_dump"):
+            try:
+                rd = cast(Dict[str, Any], r.model_dump())
+            except Exception:
+                rd = {}
+        elif isinstance(r, dict):
+            rd = r
+        else:
+            rd = {}
+        rule_id = str(rd.get("rule_id", ""))
+        if rule_id in skip_map and rd.get("status") == "PASSED":
+            rd["status"] = skip_map[rule_id]["status"]
+            rd["skip_reason"] = skip_map[rule_id]["skip_reason"]
+        enriched_results.append(rd)
+
+    rule_map: Dict[str, RuleSchema] = {str(rule.id): rule for rule in atomic_rules}
+
+    def _failed_records_of(res: Dict[str, Any]) -> int:
+        if "failed_records" in res and isinstance(res.get("failed_records"), int):
+            return int(res.get("failed_records") or 0)
+        dm = res.get("dataset_metrics") or []
+        total = 0
+        for m in dm:
+            if hasattr(m, "failed_records"):
+                total += int(getattr(m, "failed_records", 0) or 0)
+            elif isinstance(m, dict):
+                total += int(m.get("failed_records", 0) or 0)
+        return total
+
+    fields: List[Dict[str, Any]] = []
+    schema_fields_index: Dict[str, Dict[str, Any]] = {}
+
+    if schema_result_dict:
+        schema_plan = (schema_result_dict or {}).get("execution_plan", {}) or {}
+        schema_details = schema_plan.get("schema_details", {}) or {}
+        field_results = schema_details.get("field_results", []) or []
+        for item in field_results:
+            col_name = str(item.get("column"))
+            entry: Dict[str, Any] = {
+                "column": col_name,
+                "checks": {
+                    "existence": {
+                        "status": item.get("existence", "UNKNOWN"),
+                        "failure_code": item.get("failure_code", "NONE"),
+                    },
+                    "type": {
+                        "status": item.get("type", "UNKNOWN"),
+                        "failure_code": item.get("failure_code", "NONE"),
+                    },
+                },
+            }
+            fields.append(entry)
+            schema_fields_index[col_name] = entry
+
+    schema_rule = next(
+        (rule for rule in atomic_rules if rule.type == RuleType.SCHEMA), None
+    )
+    if schema_rule:
+        params = schema_rule.parameters or {}
+        declared_cols = (params.get("columns") or {}).keys()
+        for col in declared_cols:
+            if str(col) not in schema_fields_index:
+                entry = {
+                    "column": str(col),
+                    "checks": {
+                        "existence": {"status": "UNKNOWN", "failure_code": "NONE"},
+                        "type": {"status": "UNKNOWN", "failure_code": "NONE"},
+                    },
+                }
+                fields.append(entry)
+                schema_fields_index[str(col)] = entry
+
+    def _ensure_check(entry: Dict[str, Any], name: str) -> Dict[str, Any]:
+        checks: Dict[str, Dict[str, Any]] = entry.setdefault("checks", {})
+        if name not in checks:
+            checks[name] = {
+                "status": (
+                    "SKIPPED"
+                    if name in {"not_null", "range", "enum", "regex", "date_format"}
+                    else "UNKNOWN"
+                )
+            }
+        return checks[name]
+
+    for rd in enriched_results:
+        rule_id = str(rd.get("rule_id", ""))
+        rule = rule_map.get(rule_id)
+        if not rule or rule.type == RuleType.SCHEMA:
+            continue
+        column_name = rule.get_target_column() or ""
+        if not column_name:
+            continue
+        l_entry = schema_fields_index.get(column_name)
+        if not l_entry:
+            l_entry = {"column": column_name, "checks": {}}
+            fields.append(l_entry)
+            schema_fields_index[column_name] = l_entry
+        t = rule.type
+        if t == RuleType.NOT_NULL:
+            key = "not_null"
+        elif t == RuleType.RANGE:
+            key = "range"
+        elif t == RuleType.ENUM:
+            key = "enum"
+        elif t == RuleType.REGEX:
+            key = "regex"
+        elif t == RuleType.DATE_FORMAT:
+            key = "date_format"
+        else:
+            key = t.value.lower()
+        check = _ensure_check(l_entry, key)
+        check["status"] = str(rd.get("status", "UNKNOWN"))
+        if rule_id in skip_map:
+            check["status"] = skip_map[rule_id]["status"]
+            check["skip_reason"] = skip_map[rule_id]["skip_reason"]
+        fr = _failed_records_of(rd)
+        if fr:
+            check["failed_records"] = fr
+
+    total_rules = len(enriched_results)
+    passed_rules = sum(
+        1 for r in enriched_results if str(r.get("status", "")).upper() == "PASSED"
+    )
+    failed_rules = sum(
+        1 for r in enriched_results if str(r.get("status", "")).upper() == "FAILED"
+    )
+    skipped_rules = sum(
+        1 for r in enriched_results if str(r.get("status", "")).upper() == "SKIPPED"
+    )
+    total_failed_records = sum(_failed_records_of(r) for r in enriched_results)
+
+    schema_extras: List[str] = []
+    if schema_result_dict:
+        try:
+            extras = (
+                (schema_result_dict.get("execution_plan") or {}).get(
+                    "schema_details", {}
+                )
+                or {}
+            ).get("extras", [])
+            if isinstance(extras, list):
+                schema_extras = [str(x) for x in extras]
+        except Exception:
+            schema_extras = []
+
+    payload: Dict[str, Any] = {
+        "status": "ok",
+        "source": source,
+        "rules_file": rules_file,
+        "rules_count": len(atomic_rules),
+        "summary": {
+            "total_rules": total_rules,
+            "passed_rules": passed_rules,
+            "failed_rules": failed_rules,
+            "skipped_rules": skipped_rules,
+            "total_failed_records": total_failed_records,
+            "execution_time_s": round(exec_seconds, 3),
+        },
+        "results": enriched_results,
+        "fields": fields,
+    }
+    if schema_extras:
+        payload["schema_extras"] = sorted(schema_extras)
+    _safe_echo(json.dumps(payload))
+
+
+def _emit_table_output(
+    *,
+    source: str,
+    atomic_rules: List[RuleSchema],
+    results: List[Any],
+    skip_map: Dict[str, Dict[str, str]],
+    schema_result_dict: Dict[str, Any] | None,
+    exec_seconds: float,
+) -> None:
+    rule_map = {str(rule.id): rule for rule in atomic_rules}
+
+    table_results: List[Dict[str, Any]] = []
+
+    def _dataset_total(res: Dict[str, Any]) -> int:
+        if isinstance(res.get("total_records"), int):
+            return int(res.get("total_records") or 0)
+        dm = res.get("dataset_metrics") or []
+        total = 0
+        for m in dm:
+            if hasattr(m, "total_records"):
+                total = max(total, int(getattr(m, "total_records", 0) or 0))
+            elif isinstance(m, dict):
+                total = max(total, int(m.get("total_records", 0) or 0))
+        return total
+
+    for r in results:
+        rd: Dict[str, Any]
+        if hasattr(r, "model_dump"):
+            try:
+                rd = cast(Dict[str, Any], r.model_dump())
+            except Exception:
+                rd = {}
+        elif isinstance(r, dict):
+            rd = r
+        else:
+            rd = {}
+        rid = str(rd.get("rule_id", ""))
+        rule = rule_map.get(rid)
+        if rule is not None:
+            rd["rule_type"] = rule.type.value
+            rd["column_name"] = rule.get_target_column()
+            rd.setdefault("rule_name", rule.name)
+        if rid in skip_map and rd.get("status") == "PASSED":
+            rd["status"] = skip_map[rid]["status"]
+            rd["skip_reason"] = skip_map[rid]["skip_reason"]
+        table_results.append(rd)
+
+    header_total_records = 0
+    for rd in table_results:
+        header_total_records = max(header_total_records, _dataset_total(rd))
+
+    def _calc_failed(res: Dict[str, Any]) -> int:
+        if isinstance(res.get("failed_records"), int):
+            return int(res.get("failed_records") or 0)
+        dm = res.get("dataset_metrics") or []
+        total = 0
+        for m in dm:
+            if hasattr(m, "failed_records"):
+                total += int(getattr(m, "failed_records", 0) or 0)
+            elif isinstance(m, dict):
+                total += int(m.get("failed_records", 0) or 0)
+        return total
+
+    for rd in table_results:
+        if "failed_records" not in rd:
+            rd["failed_records"] = _calc_failed(rd)
+        if "total_records" not in rd:
+            rd["total_records"] = _dataset_total(rd)
+
+    column_guard: Dict[str, str] = {}
+    if schema_result_dict:
+        details = (
+            schema_result_dict.get("execution_plan", {})
+            .get("schema_details", {})
+            .get("field_results", [])
+        )
+        for item in details:
+            col = str(item.get("column"))
+            column_guard[col] = str(item.get("failure_code", "NONE"))
+
+    grouped: Dict[str, Dict[str, Any]] = {}
+    schema_rule = next((r for r in atomic_rules if r.type == RuleType.SCHEMA), None)
+    declared_cols: List[str] = []
+    if schema_rule:
+        params = schema_rule.parameters or {}
+        declared_cols = list((params.get("columns") or {}).keys())
+        for col in declared_cols:
+            grouped[str(col)] = {"column": str(col), "issues": []}
+
+    for rd in table_results:
+        rid = str(rd.get("rule_id", ""))
+        rule = rule_map.get(rid)
+        if not rule or rule.type == RuleType.SCHEMA:
+            continue
+        col = rule.get_target_column() or ""
+        if not col:
+            continue
+        entry = grouped.setdefault(col, {"column": col, "issues": []})
+        status = str(rd.get("status", "UNKNOWN"))
+        if rule.type == RuleType.NOT_NULL:
+            key = "not_null"
+        elif rule.type == RuleType.RANGE:
+            key = "range"
+        elif rule.type == RuleType.ENUM:
+            key = "enum"
+        elif rule.type == RuleType.REGEX:
+            key = "regex"
+        elif rule.type == RuleType.DATE_FORMAT:
+            key = "date_format"
+        else:
+            key = rule.type.value.lower()
+        if column_guard.get(col) == "FIELD_MISSING":
+            continue
+        if column_guard.get(col) == "TYPE_MISMATCH" and key in {
+            "not_null",
+            "range",
+            "enum",
+            "regex",
+            "date_format",
+        }:
+            continue
+        if status in {"FAILED", "ERROR", "SKIPPED"}:
+            entry["issues"].append(
+                {
+                    "check": key,
+                    "status": status,
+                    "failed_records": int(rd.get("failed_records", 0) or 0),
+                    "skip_reason": skip_map.get(rid, {}).get("skip_reason"),
+                }
+            )
+
+    lines: List[str] = []
+    lines.append(f"✓ Checking {source} ({header_total_records:,} records)")
+
+    total_failed_records = sum(
+        int(r.get("failed_records", 0) or 0) for r in table_results
+    )
+
+    for col in sorted(grouped.keys()):
+        guard = column_guard.get(col, "NONE")
+        if guard == "FIELD_MISSING":
+            lines.append(f"✗ {col}: missing (skipped dependent checks)")
+            continue
+        if guard == "TYPE_MISMATCH":
+            lines.append(f"✗ {col}: type mismatch (skipped dependent checks)")
+            continue
+        issues = grouped[col]["issues"]
+        critical = [i for i in issues if i["status"] in {"FAILED", "ERROR"}]
+        if not critical:
+            lines.append(f"✓ {col}: OK")
+        else:
+            for i in critical:
+                fr = i.get("failed_records") or 0
+                if i["status"] == "ERROR":
+                    lines.append(f"✗ {col}: {i['check']} error")
+                else:
+                    lines.append(f"✗ {col}: {i['check']} failed ({fr} failures)")
+
+    total_columns = len(grouped)
+    passed_columns = sum(
+        1
+        for col in grouped
+        if column_guard.get(col, "NONE") == "NONE"
+        and not [
+            i for i in grouped[col]["issues"] if i["status"] in {"FAILED", "ERROR"}
+        ]
+    )
+    failed_columns = total_columns - passed_columns
+    overall_error_rate = (
+        0.0
+        if header_total_records == 0
+        else (total_failed_records / max(header_total_records, 1)) * 100
+    )
+    lines.append(
+        f"\nSummary: {passed_columns} passed, {failed_columns} failed"
+        f" ({overall_error_rate:.2f}% overall error rate)"
+    )
+    lines.append(f"Time: {exec_seconds:.2f}s")
+
+    _safe_echo("\n".join(lines))
+
+
 @click.command("schema")
 @click.argument("source", required=True)
 @click.option(
@@ -385,484 +874,98 @@ def schema_command(
     Decomposition and execution are added in subsequent tasks.
     """
 
-    import asyncio
-
     from cli.core.config import get_cli_config
-    from cli.core.data_validator import DataValidator
     from core.config import get_core_config
 
     # start_time = now()
     try:
-        # Validate source and get connection config (table resolved here)
+        _maybe_echo_analyzing(source, output)
+        _guard_empty_source_file(source)
+
         source_config = SourceParser().parse_source(source)
 
-        # Validate and load rules file
-        try:
-            with open(rules_file, "r", encoding="utf-8") as f:
-                rules_payload = json.load(f)
-        except json.JSONDecodeError as e:  # Usage-level error in skeleton
-            raise click.UsageError(f"Invalid JSON in rules file: {rules_file}") from e
+        rules_payload = _read_rules_payload(rules_file)
 
-        # Minimal structure/type validation
         warnings, rules_count = _validate_rules_payload(rules_payload)
-
-        # Emit warnings
-        for msg in warnings:
-            _safe_echo(f"⚠️ Warning: {msg}", err=True)
+        _emit_warnings(warnings)
 
         # Decompose into atomic rules per design
         atomic_rules = _decompose_to_atomic_rules(rules_payload)
 
+        # Fast-path: no rules → emit minimal payload and exit cleanly
+        if len(atomic_rules) == 0:
+            _early_exit_when_no_rules(
+                source=source,
+                rules_file=rules_file,
+                output=output,
+                fail_on_error=fail_on_error,
+            )
+
         # Execute via core engine using DataValidator
         core_config = get_core_config()
         cli_config = get_cli_config()
-        validator = DataValidator(
+        validator = _create_validator(
             source_config=source_config,
-            rules=cast(List[RuleSchema | Dict[str, Any]], atomic_rules),
+            atomic_rules=atomic_rules,
             core_config=core_config,
             cli_config=cli_config,
         )
-
-        from shared.utils.datetime_utils import now as _now
-
-        _exec_start = _now()
-        results = asyncio.run(validator.validate())
-        exec_seconds = (_now() - _exec_start).total_seconds()
+        results, exec_seconds = _run_validation(validator)
 
         # Aggregation and prioritization
-        schema_result_dict: Dict[str, Any] | None = None
-        try:
-            # Locate SCHEMA result
-            for r in results:
-                # r is ExecutionResultSchema
-                if hasattr(r, "rule_id"):
-                    # We need to find the SCHEMA rule id
-                    pass
-            # Build map rule id -> rule object for later
-            # rule_map = {rule.id: rule for rule in atomic_rules}
-            schema_rule = next(
-                (rule for rule in atomic_rules if rule.type == RuleType.SCHEMA), None
-            )
-            if schema_rule:
-                # Find matching result
-                for r in results:
-                    if str(getattr(r, "rule_id", "")) == str(schema_rule.id):
-                        schema_result_dict = (
-                            r.model_dump()
-                            if hasattr(r, "model_dump")
-                            else cast(Dict[str, Any], r)  # type: ignore[cast-any]
-                        )
-                        break
-
-            skip_map = _build_prioritized_atomic_status(
-                schema_result=schema_result_dict, atomic_rules=atomic_rules
-            )
-        except Exception:
-            skip_map = {}
+        schema_result_dict: Dict[str, Any] | None = _extract_schema_result_dict(
+            atomic_rules=atomic_rules, results=results
+        )
+        skip_map = _compute_skip_map(
+            atomic_rules=atomic_rules, schema_result_dict=schema_result_dict
+        )
 
         # Apply skip map to JSON output only; table mode stays concise by design
         if output.lower() == "json":
-            # Normalize raw results to dicts for JSON serialization
-            enriched_results: List[Dict[str, Any]] = []
-            for r in results:
-                rd = (
-                    r.model_dump()
-                    if hasattr(r, "model_dump")
-                    else cast(Dict[str, Any], r)  # type: ignore[cast-any]
-                )
-                rule_id = str(rd.get("rule_id"))
-                if rule_id in skip_map and rd.get("status") == "PASSED":
-                    # Overwrite visual status to SKIPPED in JSON view for dependent
-                    # rules
-                    rd["status"] = skip_map[rule_id]["status"]
-                    rd["skip_reason"] = skip_map[rule_id]["skip_reason"]
-                enriched_results.append(rd)
-
-            # Build rule_id -> rule mapping and field aggregation
-            rule_map: Dict[str, RuleSchema] = {
-                str(rule.id): rule for rule in atomic_rules
-            }
-
-            # Helper to extract failed_records from a result dict
-            def _failed_records_of(res: Dict[str, Any]) -> int:
-                if "failed_records" in res and isinstance(
-                    res.get("failed_records"), int
-                ):
-                    return int(res.get("failed_records") or 0)
-                # Dataset metrics aggregate (prefer sum)
-                dm = res.get("dataset_metrics") or []
-                total = 0
-                for m in dm:
-                    if hasattr(m, "failed_records"):
-                        total += int(getattr(m, "failed_records", 0) or 0)
-                    elif isinstance(m, dict):
-                        total += int(m.get("failed_records", 0) or 0)
-                return total
-
-            # Build per-field checks per design (existence/type from SCHEMA details)
-            fields: List[Dict[str, Any]] = []
-            schema_fields_index: Dict[str, Dict[str, Any]] = {}
-
-            # Start with SCHEMA details if available
-            if schema_result_dict:
-                schema_plan = (schema_result_dict or {}).get("execution_plan", {}) or {}
-                schema_details = schema_plan.get("schema_details", {}) or {}
-                field_results = schema_details.get("field_results", []) or []
-                for item in field_results:
-                    col_name = str(item.get("column"))
-                    entry: Dict[str, Any] = {
-                        "column": col_name,
-                        "checks": {
-                            "existence": {
-                                "status": item.get("existence", "UNKNOWN"),
-                                "failure_code": item.get("failure_code", "NONE"),
-                            },
-                            "type": {
-                                "status": item.get("type", "UNKNOWN"),
-                                "failure_code": item.get("failure_code", "NONE"),
-                            },
-                        },
-                    }
-                    fields.append(entry)
-                    schema_fields_index[col_name] = entry
-
-            # Ensure columns declared in parameters but not in results are listed
-            schema_rule = next(
-                (rule for rule in atomic_rules if rule.type == RuleType.SCHEMA), None
+            _emit_json_output(
+                source=source,
+                rules_file=rules_file,
+                atomic_rules=atomic_rules,
+                results=results,
+                skip_map=skip_map,
+                schema_result_dict=schema_result_dict,
+                exec_seconds=exec_seconds,
             )
-            if schema_rule:
-                params = schema_rule.parameters or {}
-                declared_cols = (params.get("columns") or {}).keys()
-                for col in declared_cols:
-                    if str(col) not in schema_fields_index:
-                        entry = {
-                            "column": str(col),
-                            "checks": {
-                                "existence": {
-                                    "status": "UNKNOWN",
-                                    "failure_code": "NONE",
-                                },
-                                "type": {"status": "UNKNOWN", "failure_code": "NONE"},
-                            },
-                        }
-                        fields.append(entry)
-                        schema_fields_index[str(col)] = entry
-
-            # Add dependent checks (not_null, range, enum, regex, date_format)
-            def _ensure_check(entry: Dict[str, Any], name: str) -> Dict[str, Any]:
-                checks: Dict[str, Dict[str, Any]] = entry.setdefault("checks", {})
-                if name not in checks:
-                    checks[name] = {
-                        "status": (
-                            "SKIPPED"
-                            if name
-                            in {"not_null", "range", "enum", "regex", "date_format"}
-                            else "UNKNOWN"
-                        )
-                    }
-                return checks[name]
-
-            for rd in enriched_results:
-                rule_id = str(rd.get("rule_id"))
-                rule = rule_map.get(rule_id)
-                if not rule:
-                    continue
-                if rule.type == RuleType.SCHEMA:
-                    continue
-                column_name = rule.get_target_column() or ""
-                if not column_name:
-                    continue
-                l_entry = schema_fields_index.get(column_name)
-                if not l_entry:
-                    l_entry = {"column": column_name, "checks": {}}
-                    fields.append(l_entry)
-                    schema_fields_index[column_name] = l_entry
-
-                # Map rule type to check name
-                t = rule.type
-                if t == RuleType.NOT_NULL:
-                    key = "not_null"
-                elif t == RuleType.RANGE:
-                    key = "range"
-                elif t == RuleType.ENUM:
-                    key = "enum"
-                elif t == RuleType.REGEX:
-                    key = "regex"
-                elif t == RuleType.DATE_FORMAT:
-                    key = "date_format"
-                else:
-                    key = t.value.lower()
-
-                check = _ensure_check(l_entry, key)
-                check["status"] = str(rd.get("status", "UNKNOWN"))
-                if rule_id in skip_map:
-                    check["status"] = skip_map[rule_id]["status"]
-                    check["skip_reason"] = skip_map[rule_id]["skip_reason"]
-                fr = _failed_records_of(rd)
-                if fr:
-                    check["failed_records"] = fr
-
-            # Compute summary
-            total_rules = len(enriched_results)
-            passed_rules = sum(
-                1
-                for r in enriched_results
-                if str(r.get("status", "")).upper() == "PASSED"
-            )
-            failed_rules = sum(
-                1
-                for r in enriched_results
-                if str(r.get("status", "")).upper() == "FAILED"
-            )
-            skipped_rules = sum(
-                1
-                for r in enriched_results
-                if str(r.get("status", "")).upper() == "SKIPPED"
-            )
-            total_failed_records = sum(_failed_records_of(r) for r in enriched_results)
-
-            # Include strict extras if provided by SCHEMA execution plan
-            schema_extras: List[str] = []
-            if schema_result_dict:
-                try:
-                    extras = (
-                        (schema_result_dict.get("execution_plan") or {})
-                        .get("schema_details", {})
-                        .get("extras", [])
-                    )
-                    if isinstance(extras, list):
-                        schema_extras = [str(x) for x in extras]
-                except Exception:
-                    schema_extras = []
-
-            payload = {
-                "status": "ok",
-                "source": source,
-                "rules_file": rules_file,
-                "rules_count": len(atomic_rules),
-                "summary": {
-                    "total_rules": total_rules,
-                    "passed_rules": passed_rules,
-                    "failed_rules": failed_rules,
-                    "skipped_rules": skipped_rules,
-                    "total_failed_records": total_failed_records,
-                    "execution_time_s": round(exec_seconds, 3),
-                },
-                # Keep raw results for backward compatibility
-                "results": enriched_results,
-                # Aggregated field-level view for UX and programmatic consumption
-                "fields": fields,
-            }
-            if schema_extras:
-                payload["schema_extras"] = schema_extras
-
-            _safe_echo(json.dumps(payload))
         else:
-            # Build rule id -> rule mapping
-            rule_map = {str(rule.id): rule for rule in atomic_rules}
-
-            # Normalize and enrich results for table-friendly display
-            table_results: List[Dict[str, Any]] = []
-
-            # Helper: extract total_records and failed_records for header/stats
-            def _dataset_total(res: Dict[str, Any]) -> int:
-                if isinstance(res.get("total_records"), int):
-                    return int(res.get("total_records") or 0)
-                dm = res.get("dataset_metrics") or []
-                total = 0
-                for m in dm:
-                    if hasattr(m, "total_records"):
-                        total = max(total, int(getattr(m, "total_records", 0) or 0))
-                    elif isinstance(m, dict):
-                        total = max(total, int(m.get("total_records", 0) or 0))
-                return total
-
-            for r in results:
-                rd = (
-                    r.model_dump()
-                    if hasattr(r, "model_dump")
-                    else cast(Dict[str, Any], r)  # type: ignore[cast-any]
-                )
-                rid = str(rd.get("rule_id"))
-                rule = rule_map.get(rid)
-                if rule is not None:
-                    rd["rule_type"] = rule.type.value
-                    rd["column_name"] = rule.get_target_column()
-                    # Prefer readable name for table-level rules (e.g., SCHEMA)
-                    rd.setdefault("rule_name", rule.name)
-                # Apply skip semantics visually in table mode too
-                if rid in skip_map and rd.get("status") == "PASSED":
-                    rd["status"] = skip_map[rid]["status"]
-                    rd["skip_reason"] = skip_map[rid]["skip_reason"]
-                table_results.append(rd)
-
-            # Compute a sensible total_records for header to avoid misleading warnings
-            header_total_records = 0
-            for rd in table_results:
-                header_total_records = max(header_total_records, _dataset_total(rd))
-
-            # Ensure per-result failed_records/total_records set for accurate counts
-            def _calc_failed(res: Dict[str, Any]) -> int:
-                if isinstance(res.get("failed_records"), int):
-                    return int(res.get("failed_records") or 0)
-                dm = res.get("dataset_metrics") or []
-                total = 0
-                for m in dm:
-                    if hasattr(m, "failed_records"):
-                        total += int(getattr(m, "failed_records", 0) or 0)
-                    elif isinstance(m, dict):
-                        total += int(m.get("failed_records", 0) or 0)
-                return total
-
-            for rd in table_results:
-                if "failed_records" not in rd:
-                    rd["failed_records"] = _calc_failed(rd)
-                if "total_records" not in rd:
-                    rd["total_records"] = _dataset_total(rd)
-
-            # Build per-column grouped view with skip semantics
-            # Reuse skip_map already computed above
-            # Create rule map for dependent rules
-            rule_map = {str(rule.id): rule for rule in atomic_rules}
-
-            # Build schema_details-derived guard
-            column_guard: Dict[str, str] = {}
-            if schema_result_dict:
-                details = (
-                    schema_result_dict.get("execution_plan", {})
-                    .get("schema_details", {})
-                    .get("field_results", [])
-                )
-                for item in details:
-                    col = str(item.get("column"))
-                    column_guard[col] = str(item.get("failure_code", "NONE"))
-
-            # Aggregate by column
-            grouped: Dict[str, Dict[str, Any]] = {}
-            # Seed with schema-declared columns
-            schema_rule = next(
-                (r for r in atomic_rules if r.type == RuleType.SCHEMA), None
-            )
-            declared_cols = []
-            if schema_rule:
-                params = schema_rule.parameters or {}
-                declared_cols = list((params.get("columns") or {}).keys())
-                for col in declared_cols:
-                    grouped[str(col)] = {"column": str(col), "issues": []}
-
-            # Add dependent rule failures per column
-            for rd in table_results:
-                rid = str(rd.get("rule_id"))
-                rule = rule_map.get(rid)
-                if not rule or rule.type == RuleType.SCHEMA:
-                    continue
-                col = rule.get_target_column() or ""
-                if not col:
-                    continue
-                entry = grouped.setdefault(col, {"column": col, "issues": []})
-                status = str(rd.get("status", "UNKNOWN"))
-                # Human-friendly key
-                if rule.type == RuleType.NOT_NULL:
-                    key = "not_null"
-                elif rule.type == RuleType.RANGE:
-                    key = "range"
-                elif rule.type == RuleType.ENUM:
-                    key = "enum"
-                elif rule.type == RuleType.REGEX:
-                    key = "regex"
-                elif rule.type == RuleType.DATE_FORMAT:
-                    key = "date_format"
-                else:
-                    key = rule.type.value.lower()
-                # Skip if schema says column missing
-                if column_guard.get(col) == "FIELD_MISSING":
-                    continue
-                if column_guard.get(col) == "TYPE_MISMATCH" and key in {
-                    "not_null",
-                    "range",
-                    "enum",
-                    "regex",
-                    "date_format",
-                }:
-                    continue
-                # Record only failed/error/skipped
-                if status in {"FAILED", "ERROR", "SKIPPED"}:
-                    entry["issues"].append(
-                        {
-                            "check": key,
-                            "status": status,
-                            "failed_records": int(rd.get("failed_records", 0) or 0),
-                            "skip_reason": skip_map.get(rid, {}).get("skip_reason"),
-                        }
-                    )
-
-            # Build output lines
-            lines: List[str] = []
-            lines.append(f"✓ Checking {source} ({header_total_records:,} records)")
-
-            total_failed_records = sum(
-                int(r.get("failed_records", 0) or 0) for r in table_results
+            _emit_table_output(
+                source=source,
+                atomic_rules=atomic_rules,
+                results=results,
+                skip_map=skip_map,
+                schema_result_dict=schema_result_dict,
+                exec_seconds=exec_seconds,
             )
 
-            # Emit per-column summary
-            for col in sorted(grouped.keys()):
-                guard = column_guard.get(col, "NONE")
-                if guard == "FIELD_MISSING":
-                    lines.append(f"✗ {col}: missing (skipped dependent checks)")
-                    continue
-                if guard == "TYPE_MISMATCH":
-                    lines.append(f"✗ {col}: type mismatch (skipped dependent checks)")
-                    continue
+        # Exit code: fail if any rule failed (support both model objects and dicts)
+        def _status_of(item: Any) -> str:
+            if hasattr(item, "status"):
+                try:
+                    return str(getattr(item, "status") or "").upper()
+                except Exception:
+                    return ""
+            if isinstance(item, dict):
+                return str(item.get("status", "") or "").upper()
+            return ""
 
-                issues = grouped[col]["issues"]
-                # Show only problematic checks; if none, mark OK
-                critical = [i for i in issues if i["status"] in {"FAILED", "ERROR"}]
-                if not critical:
-                    lines.append(f"✓ {col}: OK")
-                else:
-                    for i in critical:
-                        fr = i.get("failed_records") or 0
-                        if i["status"] == "ERROR":
-                            lines.append(f"✗ {col}: {i['check']} error")
-                        else:
-                            lines.append(
-                                f"✗ {col}: {i['check']} failed ({fr} failures)"
-                            )
+        any_failed = any(_status_of(r) == "FAILED" for r in results)
+        import click as _click
 
-            # Summary by columns while keeping overall error rate
-            total_columns = len(grouped)
-            passed_columns = sum(
-                1
-                for col in grouped
-                if column_guard.get(col, "NONE") == "NONE"
-                and not [
-                    i
-                    for i in grouped[col]["issues"]
-                    if i["status"] in {"FAILED", "ERROR"}
-                ]
-            )
-            failed_columns = total_columns - passed_columns
-            overall_error_rate = (
-                0.0
-                if header_total_records == 0
-                else (total_failed_records / max(header_total_records, 1)) * 100
-            )
-            lines.append(
-                f"\nSummary: {passed_columns} passed, {failed_columns} failed "
-                f"({overall_error_rate:.2f}% overall error rate)"
-            )
-            lines.append(f"Time: {exec_seconds:.2f}s")
-
-            _safe_echo("\n".join(lines))
-
-        # Exit code: fail if any rule failed
-        any_failed = any((r.status or "").upper() == "FAILED" for r in results)
-        sys.exit(1 if any_failed or fail_on_error else 0)
+        raise _click.exceptions.Exit(1 if any_failed or fail_on_error else 0)
 
     except click.UsageError:
         # Propagate Click usage errors for standard exit code (typically 2)
         raise
+    except click.exceptions.Exit:
+        # Allow Click's explicit Exit (with code) to propagate unchanged
+        raise
     except Exception as e:  # Fallback: print concise error and return generic failure
         logger.error(f"Schema command error: {str(e)}")
         _safe_echo(f"❌ Error: {str(e)}", err=True)
-        sys.exit(1)
+        import click as _click
+
+        raise _click.exceptions.Exit(1)

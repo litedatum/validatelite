@@ -207,7 +207,7 @@ class LoggerManager:
     def _setup_basic_logging(self) -> None:
         """Set up basic logging config (fail-safe)"""
         try:
-            console_handler = logging.StreamHandler(sys.stdout)
+            console_handler = logging.StreamHandler(sys.stderr)
             console_handler.setLevel(logging.INFO)
             formatter = logging.Formatter(
                 "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -244,7 +244,7 @@ class LoggerManager:
         try:
             # Console handler
             if self.config.get("to_console", True):
-                console_handler = logging.StreamHandler(sys.stdout)
+                console_handler = logging.StreamHandler(sys.stderr)
                 # Convert string level to logging level constant
                 level_str = self.config.get("level", "INFO")
                 level = getattr(logging, level_str.upper(), logging.INFO)

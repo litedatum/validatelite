@@ -5,7 +5,33 @@ All notable changes to ValidateLite will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0] - 2025-01-27
+## [Unreleased]
+
+### Added
+- feat(cli): add `schema` command skeleton
+- feat(cli): add minimal rules file validation for schema command (no jsonschema in v1)
+- feat(core): introduce `SCHEMA` rule type with table-level existence and type checks
+- feat(cli): decompose schema rules into atomic rules (SCHEMA, NOT_NULL, RANGE, ENUM)
+- feat(cli): aggregation and prioritization in CLI with column-guard skip semantics (FIELD_MISSING/TYPE_MISMATCH)
+- feat(cli): output formatting improvements for table mode (column-grouped view, readable descriptors)
+- feat(cli): aggregated JSON output for schema command with summary/results/fields/schema_extras
+- docs: add JSON Schema for results at `docs/schemas/schema_results.schema.json`
+- tests(cli): comprehensive unit tests for `schema` command covering argument parsing, rules file validation, decomposition/mapping, aggregation priority, output formats (table/json), and exit codes (AC satisfied)
+
+### Changed
+- docs: update README and USAGE with schema command overview and detailed usage
+- cli(schema): align table header record count with execution metrics to avoid misleading warnings
+- cli(schema): data-source resolution parity with `check` (analyzing echo and empty file guard)
+
+### Fixed
+- cli(schema): correct failed records accounting in table output
+- cli(schema): ensure dependent rules display as SKIPPED where applicable in both JSON and table modes
+- cli(schema): handle empty source file with clear error, mirroring `check`
+
+### Removed
+- None
+
+## [0.3.0] - 2025-08-05
 
 ### Added
 - Enhanced project maturity with comprehensive test coverage
@@ -29,30 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - None
 
-## [Unreleased]
-
-### Added
-- feat(cli): add `schema` command skeleton
-- feat(cli): add minimal rules file validation for schema command (no jsonschema in v1)
-- feat(core): introduce `SCHEMA` rule type with table-level existence and type checks
-- feat(cli): decompose schema rules into atomic rules (SCHEMA, NOT_NULL, RANGE, ENUM)
-- feat(cli): aggregation and prioritization in CLI with column-guard skip semantics (FIELD_MISSING/TYPE_MISMATCH)
-- feat(cli): output formatting improvements for table mode (column-grouped view, readable descriptors)
-- feat(cli): aggregated JSON output for schema command with summary/results/fields/schema_extras
-- docs: add JSON Schema for results at `docs/schemas/schema_results.schema.json`
-
-### Changed
-- docs: update README and USAGE with schema command overview and detailed usage
-- cli(schema): align table header record count with execution metrics to avoid misleading warnings
-
-### Fixed
-- cli(schema): correct failed records accounting in table output
-- cli(schema): ensure dependent rules display as SKIPPED where applicable in both JSON and table modes
-
-### Removed
-- None
-
-## [0.1.0] - 2025-08-02
+## [0.1.0] - 2025-07-22
 
 ### Added
 - Initial release of ValidateLite
