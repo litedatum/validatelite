@@ -22,6 +22,7 @@ wheels/
 backup/
 notes/
 temp/
+/tmp*/
 
 # Virtual Environment
 .env
