@@ -18,16 +18,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - docs: add JSON Schema for results at `docs/schemas/schema_results.schema.json`
 - tests(cli): comprehensive unit tests for `schema` command covering argument parsing, rules file validation, decomposition/mapping, aggregation priority, output formats (table/json), and exit codes (AC satisfied)
  - tests(core): unit tests for `SCHEMA` rule covering normal/edge/error cases, strict type checks, and mypy compliance
+- tests(integration): database schema drift tests for MySQL and PostgreSQL (existence, type consistency, strict mode extras, case-insensitive)
+- tests(e2e): end-to-end `vlite-cli schema` scenarios on database URLs covering happy path, drift (FIELD_MISSING/TYPE_MISMATCH), strict extras, empty rules minimal payload; JSON and table outputs
 
 ### Changed
 - docs: update README and USAGE with schema command overview and detailed usage
 - cli(schema): align table header record count with execution metrics to avoid misleading warnings
 - cli(schema): data-source resolution parity with `check` (analyzing echo and empty file guard)
+- tests(e2e): JSON parse failures now assert with detailed stdout/stderr instead of being skipped, to surface real errors in CI
 
 ### Fixed
 - cli(schema): correct failed records accounting in table output
 - cli(schema): ensure dependent rules display as SKIPPED where applicable in both JSON and table modes
 - cli(schema): handle empty source file with clear error, mirroring `check`
+- cli(schema): JSON output now serializes datetime fields via `default=str` to avoid non-serializable payloads
+- core(validity): schema type mapping recognizes PostgreSQL `CHARACTER` as STRING to prevent false type mismatches
 
 ### Removed
 - None
