@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://validatelite.io/schemas/schema_results.schema.json",
+  "title": "Schema Command Results",
+  "description": "Aggregated JSON output for `vlite schema` command.",
+  "type": "object",
+  "required": [
+    "status",
+    "source",
+    "rules_file",
+    "rules_count",
+    "summary",
+    "results",
+    "fields"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["ok"]
+    },
+    "source": {
+      "type": "string",
+      "description": "Original data-source argument"
+    },
+    "rules_file": {
+      "type": "string"
+    },
+    "rules_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "total_rules",
+        "passed_rules",
+        "failed_rules",
+        "skipped_rules",
+        "total_failed_records",
+        "execution_time_s"
+      ],
+      "properties": {
+        "total_rules": { "type": "integer", "minimum": 0 },
+        "passed_rules": { "type": "integer", "minimum": 0 },
+        "failed_rules": { "type": "integer", "minimum": 0 },
+        "skipped_rules": { "type": "integer", "minimum": 0 },
+        "total_failed_records": { "type": "integer", "minimum": 0 },
+        "execution_time_s": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "results": {
+      "type": "array",
+      "description": "Raw rule execution results (backward compatible).",
+      "items": {
+        "type": "object",
+        "required": ["rule_id", "status"],
+        "properties": {
+          "rule_id": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["PASSED", "FAILED", "ERROR", "SKIPPED"]
+          },
+          "total_records": { "type": "integer", "minimum": 0 },
+          "failed_records": { "type": "integer", "minimum": 0 },
+          "execution_time": { "type": "number", "minimum": 0 },
+          "message": { "type": ["string", "null"] },
+          "error_message": { "type": ["string", "null"] },
+          "sample_data": { "type": ["array", "null"] },
+          "executed_at": { "type": ["string", "null"], "format": "date-time" },
+          "skip_reason": { "type": ["string", "null"], "enum": ["FIELD_MISSING", "TYPE_MISMATCH", null] },
+          "dataset_metrics": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "object",
+              "required": ["entity_name", "total_records", "failed_records"],
+              "properties": {
+                "entity_name": { "type": "string" },
+                "total_records": { "type": "integer", "minimum": 0 },
+                "failed_records": { "type": "integer", "minimum": 0 },
+                "processing_time": { "type": ["number", "null"], "minimum": 0 }
+              },
+              "additionalProperties": true
+            }
+          },
+          "execution_plan": { "type": ["object", "null"] }
+        },
+        "additionalProperties": true
+      }
+    },
+    "fields": {
+      "type": "array",
+      "description": "Per-column aggregated checks with prioritization and skip semantics.",
+      "items": {
+        "type": "object",
+        "required": ["column", "checks"],
+        "properties": {
+          "column": { "type": "string" },
+          "checks": {
+            "type": "object",
+            "description": "Atomic checks keyed by name (existence, type, not_null, range, enum, regex, date_format)",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["status"],
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": ["PASSED", "FAILED", "ERROR", "SKIPPED", "UNKNOWN"]
+                },
+                "failure_code": {
+                  "type": ["string", "null"],
+                  "enum": ["FIELD_MISSING", "TYPE_MISMATCH", "NONE", null]
+                },
+                "skip_reason": {
+                  "type": ["string", "null"],
+                  "enum": ["FIELD_MISSING", "TYPE_MISMATCH", null]
+                },
+                "failed_records": { "type": ["integer", "null"], "minimum": 0 }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "schema_extras": {
+      "type": "array",
+      "description": "Extra columns found when strict_mode=true.",
+      "items": { "type": "string" }
+    }
+  },
+  "additionalProperties": false
+}

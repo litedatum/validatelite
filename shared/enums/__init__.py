@@ -11,6 +11,7 @@ Provides unified enum definitions to avoid magic strings, including:
 """
 
 from .connection_types import ConnectionType
+from .data_types import DataType
 from .execution_status import ExecutionStatus
 from .rule_actions import RuleAction
 from .rule_categories import RuleCategory
@@ -24,4 +25,5 @@ __all__ = [
     "ConnectionType",
     "RuleCategory",
     "RuleAction",
+    "DataType",
 ]

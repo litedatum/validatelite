@@ -20,6 +20,9 @@ wheels/
 .installed.cfg
 *.egg
 backup/
+notes/
+temp/
+/tmp*/
 
 # Virtual Environment
 .env

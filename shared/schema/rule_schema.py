@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional
 from pydantic import field_validator, model_validator
 
 from shared.enums import RuleAction, RuleCategory, RuleType, SeverityLevel
+from shared.enums.data_types import DataType
 from shared.exceptions.exception_system import RuleExecutionError
 from shared.schema.base import (
     ExecutionStrategy,
@@ -321,6 +322,26 @@ class RuleSchema(RuleBase):
             except re.error as e:
                 raise RuleExecutionError(f"Invalid regex pattern: {e}")
 
+        elif self.type == RuleType.SCHEMA:
+            columns_cfg = params.get("columns")
+            if not isinstance(columns_cfg, dict) or len(columns_cfg) == 0:
+                raise RuleExecutionError(
+                    "SCHEMA rule requires non-empty columns mapping"
+                )
+            for col_name, cfg in columns_cfg.items():
+                if not isinstance(cfg, dict) or "expected_type" not in cfg:
+                    raise RuleExecutionError(
+                        f"Column '{col_name}' must specify expected_type for "
+                        "SCHEMA rule"
+                    )
+                try:
+                    DataType(str(cfg["expected_type"]).upper())
+                except Exception:
+                    raise RuleExecutionError(
+                        f"Unsupported expected_type for SCHEMA column '{col_name}': "
+                        f"{cfg.get('expected_type')}"
+                    )
+
         # elif self.type == RuleType.CUSTOM_SQL:  # not supported in current version
         #     sql_query = params.get('sql_query') or params.get('custom_sql')
         #     if not sql_query:
@@ -340,6 +361,7 @@ class RuleSchema(RuleBase):
             # RuleType.PHONE: "format",  # not supported in current version
             # RuleType.URL: "format",  # not supported in current version
             RuleType.DATE_FORMAT: "format",
+            RuleType.SCHEMA: "validity",
             # RuleType.COUNT: "statistical",  # not supported in current version
             # RuleType.SUM: "statistical",  # not supported in current version
             # RuleType.AVERAGE: "statistical",  # not supported in current version

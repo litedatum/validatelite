@@ -1,0 +1,10 @@
+{
+    "rules": [
+      { "field": "id", "type": "integer", "required": true },
+      { "field": "age", "type": "integer", "required": true, "min": 0, "max": 120 },
+      { "field": "gender", "type": "integer", "enum": [0, 1] },
+      { "field": "name", "type": "string", "required": true },
+      { "field": "invalid_col", "type": "string", "required": true },
+      { "field": "email", "type": "string" }
+    ]
+}

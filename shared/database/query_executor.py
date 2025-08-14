@@ -287,6 +287,7 @@ class QueryExecutor:
 
         try:
             prepared_params = self._preprocess_params(params or {})
+            result: Any
             if isinstance(self.engine_or_conn, AsyncEngine):
                 async with self.engine_or_conn.connect() as conn:
                     result = await conn.execute(text(query), prepared_params)
@@ -476,7 +477,7 @@ class QueryExecutor:
 
             try:
                 # Use executemany for efficient batch insertion
-                result = await conn.execute(text(query), batch)
+                result: Any = await conn.execute(text(query), batch)
                 batch_inserted = result.rowcount if result.rowcount else len(batch)
                 total_inserted += batch_inserted
                 execution_time = time.time() - start_time
@@ -638,7 +639,7 @@ class QueryExecutor:
             )
 
             try:
-                result = await conn.execute(text(query), params)
+                result: Any = await conn.execute(text(query), params)
                 batch_inserted = result.rowcount if result.rowcount else len(batch)
                 total_inserted += batch_inserted
                 execution_time = time.time() - start_time

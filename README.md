@@ -14,6 +14,7 @@ Follow the journey of building ValidateLite through our development blog posts:
 
 - **[DevLog #1: Building a Zero-Config Data Validation Tool](https://blog.litedatum.com/posts/Devlog01-data-validation-tool/)** - The initial vision and architecture of ValidateLite
 - **[DevLog #2: Why I Scrapped My Half-Built Data Validation Platform](https://blog.litedatum.com/posts/Devlog02-Rethinking-My-Data-Validation-Tool/)** - Lessons learned from scope creep and the pivot to a focused CLI tool
+- **[Rule-Driven Schema Validation: A Lightweight Solution](https://blog.litedatum.com/posts/Rule-Driven-Schema-Validation/)** - Deep dive into schema drift challenges and how ValidateLite's schema validation provides a lightweight alternative to complex frameworks
 
 ---
 
@@ -87,12 +88,14 @@ See [DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md) for detailed development s
 - **⚙️ Configurable & Modular**: Flexible configuration via TOML and environment variables
 - **🛡️ Comprehensive Error Handling**: Robust exception and error classification system
 - **🧪 Tested & Reliable**: High code coverage, modular tests, and pre-commit hooks
+- **📐 Schema Drift Prevention**: Lightweight schema validation that prevents data pipeline failures from unexpected schema changes - a simple alternative to complex validation frameworks
 
 ---
 
 ## 📖 Documentation
 
 - **[USAGE.md](docs/USAGE.md)** - Complete user guide with examples and best practices
+- Schema command JSON output contract: `docs/schemas/schema_results.schema.json`
 - **[DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md)** - Development environment setup and contribution guidelines
 - **[CONFIG_REFERENCE.md](docs/CONFIG_REFERENCE.md)** - Configuration file reference
 - **[ROADMAP.md](docs/ROADMAP.md)** - Development roadmap and future plans
@@ -115,6 +118,15 @@ vlite check "mysql://user:pass@host:3306/db.table" --rules validation_rules.json
 ### Check with verbose output
 ```bash
 vlite check data.csv --rules rules.json --verbose
+```
+
+### Validate against a schema file (single table)
+```bash
+# Table is derived from the data-source URL, the schema file is single-table in v1
+vlite schema "mysql://user:pass@host:3306/sales.users" --rules schema.json
+
+# Get aggregated JSON with column-level details (see docs/schemas/schema_results.schema.json)
+vlite schema "mysql://.../sales.users" --rules schema.json --output json
 ```
 
 For detailed usage examples and advanced features, see [USAGE.md](docs/USAGE.md).

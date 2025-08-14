@@ -17,6 +17,7 @@ from cli.core.config import get_cli_config
 # Import new configuration system
 from core.config import get_core_config
 from shared.exceptions import EngineError, OperationError, RuleExecutionError
+from shared.utils.console import safe_echo
 from shared.utils.datetime_utils import now
 from shared.utils.logger import get_logger
 
@@ -110,7 +111,7 @@ def check_command(
                 )
 
             # Parse source
-            click.echo(f"🔍 Analyzing source: {source}")
+            safe_echo(f"🔍 Analyzing source: {source}")
 
             # Proactively verify that a provided file is not empty – this avoids
             # kicking off heavy validation logic only to discover the file is
@@ -130,7 +131,7 @@ def check_command(
 
             # Parse rules - this may raise Schema creation error
             # (RuleExecutionError)
-            click.echo("📋 Loading validation rules...")
+            safe_echo("📋 Loading validation rules...")
             rule_configs = rule_parser.parse_rules(
                 inline_rules=list(rules) if rules else [], rules_file=rules_file
             )
@@ -138,7 +139,7 @@ def check_command(
             if not rule_configs:
                 raise click.UsageError("No valid rules found.")
 
-            click.echo(f"   Found {len(rule_configs)} validation rules")
+            safe_echo(f"   Found {len(rule_configs)} validation rules")
 
             # Create data validator with new configuration system
             # Use cast to satisfy mypy type checker due to list invariance
@@ -160,7 +161,7 @@ def check_command(
         # Phase 2: Core validation execution
         try:
             # Execute validation
-            click.echo("✅ Starting validation...")
+            safe_echo("✅ Starting validation...")
             results = asyncio.run(validator.validate())
             # Ensure results is not None before converting to dicts
             results_dicts = (
@@ -182,17 +183,17 @@ def check_command(
         # Decide output and exit code based on error context
         if error_context.category != "success":
             # Show error message
-            click.echo(f"❌ {error_context.user_message}", err=True)
+            safe_echo(f"❌ {error_context.user_message}", err=True)
 
             # Show recovery suggestions
             if error_context.recovery_actions:
-                click.echo("\nSuggested actions:")
+                safe_echo("\nSuggested actions:")
                 for action in error_context.recovery_actions:
-                    click.echo(f"• {action}")
+                    safe_echo(f"• {action}")
 
             # Show technical details (if verbose enabled)
             if verbose and error_context.technical_details:
-                click.echo(f"\nTechnical details:\n{error_context.technical_details}")
+                safe_echo(f"\nTechnical details:\n{error_context.technical_details}")
 
             sys.exit(error_context.exit_code)
         else:
@@ -218,7 +219,7 @@ def check_command(
             else:
                 logger.info("All validations passed successfully")
                 # Show success message
-                click.echo(f"✅ {error_context.user_message}")
+                safe_echo(f"✅ {error_context.user_message}")
                 sys.exit(0)
 
     except click.UsageError:
@@ -253,19 +254,19 @@ def check_command(
             )
 
             # Show success message
-            click.echo(f"✅ {error_context.user_message}")
+            safe_echo(f"✅ {error_context.user_message}")
             sys.exit(0)
         else:
             # Show error message
-            click.echo(f"❌ {error_context.user_message}", err=True)
+            safe_echo(f"❌ {error_context.user_message}", err=True)
 
             if error_context.recovery_actions:
-                click.echo("\nSuggested actions:")
+                safe_echo("\nSuggested actions:")
                 for action in error_context.recovery_actions:
-                    click.echo(f"• {action}")
+                    safe_echo(f"• {action}")
 
             if verbose and error_context.technical_details:
-                click.echo(f"\nTechnical details:\n{error_context.technical_details}")
+                safe_echo(f"\nTechnical details:\n{error_context.technical_details}")
 
             sys.exit(error_context.exit_code)
 
@@ -315,4 +316,4 @@ SOURCES SUPPORTED:
   Database URLs: mysql://user:pass@host/db.table
   SQLite Files:  sqlite:///path/to/file.db
     """
-    click.echo(help_text)
+    safe_echo(help_text)
