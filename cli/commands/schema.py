@@ -396,7 +396,7 @@ def _early_exit_when_no_rules(
             "results": [],
             "fields": [],
         }
-        _safe_echo(json.dumps(payload))
+        _safe_echo(json.dumps(payload, default=str))
         raise click.exceptions.Exit(1 if fail_on_error else 0)
     else:
         _safe_echo(f"✓ Checking {source} (0 records)")
@@ -493,7 +493,7 @@ def _emit_json_output(
         else:
             rd = {}
         rule_id = str(rd.get("rule_id", ""))
-        if rule_id in skip_map and rd.get("status") == "PASSED":
+        if rule_id in skip_map:
             rd["status"] = skip_map[rule_id]["status"]
             rd["skip_reason"] = skip_map[rule_id]["skip_reason"]
         enriched_results.append(rd)
@@ -646,7 +646,7 @@ def _emit_json_output(
     }
     if schema_extras:
         payload["schema_extras"] = sorted(schema_extras)
-    _safe_echo(json.dumps(payload))
+    _safe_echo(json.dumps(payload, default=str))
 
 
 def _emit_table_output(
@@ -691,7 +691,7 @@ def _emit_table_output(
             rd["rule_type"] = rule.type.value
             rd["column_name"] = rule.get_target_column()
             rd.setdefault("rule_name", rule.name)
-        if rid in skip_map and rd.get("status") == "PASSED":
+        if rid in skip_map:
             rd["status"] = skip_map[rid]["status"]
             rd["skip_reason"] = skip_map[rid]["skip_reason"]
         table_results.append(rd)

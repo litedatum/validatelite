@@ -670,6 +670,7 @@ class ValidityExecutor(BaseExecutor):
                 # Common mappings
                 string_types = {
                     "CHAR",
+                    "CHARACTER",
                     "NCHAR",
                     "NVARCHAR",
                     "VARCHAR",
