@@ -1,42 +1,46 @@
 # ValidateLite - User Manual
 
-This document provides detailed instructions on how to use ValidateLite for data validation tasks. For installation and initial setup, please refer to the [README.md](../README.md).
+This document provides comprehensive instructions on how to use ValidateLite for data validation tasks. ValidateLite is a lightweight, zero-config Python CLI tool for data quality validation across files and SQL databases.
 
 ---
 
 ## Table of Contents
 
-- [Installation](#installation)
-- [Core Command: `check`](#core-command-check)
-- [Schema Command: `schema`](#schema-command-schema)
-- [Specifying the Data Source](#specifying-the-data-source)
-  - [File-Based Sources](#file-based-sources)
-  - [Database Sources](#database-sources)
-- [Specifying Validation Rules](#specifying-validation-rules)
-  - [Inline Rules (`--rule`)](#inline-rules---rule)
-  - [Rule Files (`--rules`)](#rule-files---rules)
-- [Command Options](#command-options)
-- [Output Interpretation](#output-interpretation)
-- [Practical Examples](#practical-examples)
-- [Error Handling](#error-handling)
-- [Configuration](#configuration)
+- [Quick Start Guide](#quick-start-guide)
+  - [Installation](#installation)
+  - [First Validation Example](#first-validation-example)
+- [Core Concepts](#core-concepts)
+  - [Command Syntax Overview](#command-syntax-overview)
+  - [Data Source Types](#data-source-types)
+  - [Rule Types Overview](#rule-types-overview)
+- [Commands Reference](#commands-reference)
+  - [The `check` Command - Rule-Based Validation](#the-check-command---rule-based-validation)
+  - [The `schema` Command - Schema Validation](#the-schema-command---schema-validation)
+- [Advanced Usage](#advanced-usage)
+  - [Data Source Configuration](#data-source-configuration)
+  - [Validation Rules Deep Dive](#validation-rules-deep-dive)
+  - [Output & Reporting](#output--reporting)
+- [Configuration & Environment](#configuration--environment)
+- [Troubleshooting](#troubleshooting)
+- [Getting Help](#getting-help)
 
 ---
 
-## Installation
+## Quick Start Guide
 
-### Option 1: Install from PyPI (Recommended)
+### Installation
+
+**Option 1: Install from PyPI (Recommended)**
 ```bash
 pip install validatelite
 ```
 
-### Option 2: Install from pre-built package
+**Option 2: Install from pre-built package**
 ```bash
-# Download the latest release from GitHub
-pip install validatelite-0.1.0-py3-none-any.whl
+pip install validatelite-0.4.0-py3-none-any.whl
 ```
 
-### Option 3: Run from source
+**Option 3: Run from source**
 ```bash
 git clone https://github.com/litedatum/validatelite.git
 cd validatelite
@@ -47,178 +51,116 @@ After installation, you can use the CLI with either:
 - `vlite` (if installed via pip)
 - `python cli_main.py` (if running from source)
 
+### First Validation Example
+
+Let's start with a simple validation to check that all records in a CSV file have non-null IDs:
+
+```bash
+# Validate a CSV file
+vlite check examples/sample_data.csv --rule "not_null(customer_id)"
+
+# Validate a database table
+vlite check "mysql://user:pass@localhost:3306/mydb.customers" --rule "unique(email)"
+
+# Validate against a schema file
+vlite schema "mysql://user:pass@localhost:3306/mydb.customers" --rules schema.json
+```
+
 ---
 
-## Core Command: `check`
+## Core Concepts
 
-The primary command for running data validation is `check`.
+### Command Syntax Overview
 
-### Basic Syntax
+ValidateLite provides two main commands:
+
+1. **`vlite check`** - Rule-based validation with flexible, granular rules
+2. **`vlite schema`** - Schema-based validation with structured JSON schema files
+
+Both commands follow this general pattern:
+```bash
+vlite <command> <data_source> [options]
+```
+
+### Data Source Types
+
+ValidateLite supports multiple data source types:
+
+| Type | Format | Example |
+|------|--------|---------|
+| **Local Files** | CSV, Excel, JSON, JSONL | `data/customers.csv` |
+| **MySQL** | Connection string | `mysql://user:pass@host:3306/db.table` |
+| **PostgreSQL** | Connection string | `postgresql://user:pass@host:5432/db.table` |
+| **SQLite** | File path with table | `sqlite:///path/to/db.sqlite.table` |
+
+### Rule Types Overview
+
+| Category | Rule Types | Description |
+|----------|------------|-------------|
+| **Completeness** | `not_null` | Check for missing/null values |
+| **Uniqueness** | `unique` | Check for duplicate values |
+| **Validity** | `regex`, `date_format`, `enum` | Check data format and values |
+| **Consistency** | `range`, `length` | Check data bounds and constraints |
+| **Schema** | `schema` (auto-generated) | Check field existence and types |
+
+---
+
+## Commands Reference
+
+### The `check` Command - Rule-Based Validation
+
+The `check` command allows you to specify validation rules either inline or through JSON files for flexible, granular data validation.
+
+#### Basic Syntax & Parameters
 
 ```bash
 vlite check <data_source> [options]
 ```
 
-- **`<data_source>`**: The path to a file or a database connection string. (Required)
-- **`[options]`**: Options to specify rules, control output verbosity, etc.
+**Required Parameters:**
+- `<data_source>` - Path to file or database connection string
 
----
-## Schema Command: `schema`
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `--rule "rule_spec"` | Specify inline validation rule (can be used multiple times) |
+| `--rules <file.json>` | Specify JSON file containing validation rules |
+| `--verbose` | Show detailed results with failure samples |
+| `--quiet` | Show only summary information |
+| `--help` | Display command help |
 
-Validate a table against a JSON schema file. The CLI decomposes the schema into atomic rules (schema/type, not_null, range, enum, etc.), executes them, and aggregates results with root-cause prioritization and column-grouped reporting.
+#### Specifying Rules
 
-### Basic Syntax
+**Inline Rules (`--rule`)**
 
-```bash
-vlite schema <data_source> --rules <schema_file.json> [--output table|json] [--verbose]
-```
-
-- `<data_source>`: Database/table identifier; the table is derived from the URL (single-table in v1), e.g. `mysql://user:pass@host:3306/db.table`.
-- `--rules`: Path to a JSON schema file with a top-level `rules` array. Multi-table is not supported in v1.
-- `--output`: `table` (default) or `json`.
-- `--verbose`: Show more details in table mode.
-
-### Schema File (v1) - Minimal Structure
-
-```json
-{
-  "rules": [
-    { "field": "id", "type": "integer", "required": true },
-    { "field": "age", "type": "integer", "min": 0, "max": 120 },
-    { "field": "gender", "type": "string", "enum": ["M", "F"] }
-  ],
-  "strict_mode": true,
-  "case_insensitive": false
-}
-```
-
-Notes:
-- Top-level `table` is ignored; the table is inferred from `<data_source>`. If present, a warning is emitted.
-- Supported `type`: `string|integer|float|boolean|date|datetime`.
-- For each rule item:
-  - `required: true` → emits a NOT_NULL rule.
-  - `min/max` → emits a RANGE rule.
-  - `enum` → emits an ENUM rule.
-  - `type` contributes to a table-level SCHEMA rule with `expected_type`.
-
-### Output
-
-- Table mode (default): Column-grouped summary. If a column is missing, only show the missing message and skip dependent checks. For type mismatch, similarly skip dependent checks.
-- JSON mode: Aggregated structure including `summary`, raw `results`, per-column `fields`, and `schema_extras` when `strict_mode=true`.
-- JSON schema (output contract): See `docs/schemas/schema_results.schema.json`.
-
-#### Examples
+Use `--rule` for simple, quick validations:
 
 ```bash
-# Table mode
-vlite schema "mysql://root:root123@localhost:3306/data_quality.customers" --rules test_data/schema.json
+# Single rule
+vlite check data.csv --rule "not_null(id)"
 
-# JSON mode (machine-readable)
-vlite schema "mysql://.../data_quality.customers" --rules test_data/schema.json --output json
-```
-
-### Exit Codes
-
-- `0`: All checks passed.
-- `1`: One or more checks failed (or --fail-on-error set and an error occurred).
-- `>=2`: Usage error (e.g., invalid JSON, unsupported schema structure).
-
----
-
-## Specifying the Data Source
-
-The tool intelligently recognizes the source type based on the input string.
-
-### File-Based Sources
-
-You can directly provide the path to a local file.
-
-- **Supported formats**: CSV, TSV, Excel (.xls, .xlsx), JSON, JSONL.
-
-**Example:**
-```bash
-# Validate a local CSV file
-vlite check data/customers.csv --rule "not_null(id)"
-
-# Validate a local Excel file
-vlite check test_data/customers.xlsx --rule "unique(id)"
-```
-
-### Database Sources
-
-Connect to databases using a standard URL connection string.
-
-- **Supported databases**: MySQL, PostgreSQL, SQLite.
-
-#### URL Format
-
-The general format is:
-`dialect://user:password@host:port/database.table`
-
-- **`dialect`**: `mysql`, `postgresql`, `sqlite`
-- **`database`**: The name of the database.
-- **`table`**: The name of the table to validate.
-
-#### Examples
-
-**MySQL:**
-```bash
-vlite check "mysql://root:root123@localhost:3306/data_quality.customers" --rules /path/to/rules.json
-```
-
-**PostgreSQL:**
-```bash
-vlite check "postgresql://user:pass@host:5432/data_quality.customers" --rules /path/to/rules.json
-```
-
-**SQLite:**
-The path to the SQLite database file.
-```bash
-vlite check "sqlite:///path/to/my_database.db.table_name" --rule "not_null(id)"
-```
-
----
-
-## Specifying Validation Rules
-
-You can define validation rules either directly on the command line or through a JSON file.
-
-### Inline Rules (`--rule`)
-
-Use the `--rule` option to specify a single rule. You can use this option multiple times to apply several rules.
-
-#### Syntax
-`--rule "rule_type(parameter1,parameter2,...)"`
-
-#### Supported Inline Rules
-
-| Rule Type     | Syntax                                      | Description                                      |
-|---------------|---------------------------------------------|--------------------------------------------------|
-| `not_null`    | `not_null(column_name)`                     | Checks for `NULL` or empty values in a column.   |
-| `unique`      | `unique(column_name)`                       | Checks for duplicate values in a column.         |
-| `length`      | `length(column_name, min, max)`             | Checks if string length is within a range.       |
-| `range`       | `range(column_name, min, max)`              | Checks if numerical value is within a range.     |
-| `enum`        | `enum(column_name, 'val1', 'val2', ...)`    | Checks if column value is in the specified set.  |
-| `regex`       | `regex(column_name, 'pattern')`             | Checks if column value matches a regex pattern.  |
-| `date_format` | `date_format(column_name, 'format_string')` | Checks if date strings match a specified format. |
-
-**Note**: The **date_format** rule currently only supports the MySQL database.
-
-**Example:**
-```bash
+# Multiple rules
 vlite check data.csv \
   --rule "not_null(name)" \
   --rule "unique(id)" \
   --rule "range(age, 18, 99)"
 ```
 
-### Rule Files (`--rules`)
+**Supported Inline Rule Types:**
 
-For complex scenarios, you can define all your rules in a single JSON file and pass it using the `--rules` option.
+| Rule Type | Syntax | Description |
+|-----------|--------|-------------|
+| `not_null` | `not_null(column)` | No NULL or empty values |
+| `unique` | `unique(column)` | No duplicate values |
+| `length` | `length(column, min, max)` | String length within range |
+| `range` | `range(column, min, max)` | Numeric value within range |
+| `enum` | `enum(column, 'val1', 'val2', ...)` | Value in specified set |
+| `regex` | `regex(column, 'pattern')` | Matches regex pattern |
+| `date_format` | `date_format(column, 'format')` | Date format validation (MySQL only) |
 
-#### JSON File Structure
+**JSON Rule Files (`--rules`)**
 
-The file must contain a JSON object with a top-level `rules` key, which holds an array of rule objects.
+For complex validations, use JSON files:
 
 ```json
 {
@@ -226,7 +168,7 @@ The file must contain a JSON object with a top-level `rules` key, which holds an
     {
       "type": "not_null",
       "column": "id",
-      "description": "ID must not be null."
+      "description": "ID must not be null"
     },
     {
       "type": "length",
@@ -254,62 +196,50 @@ The file must contain a JSON object with a top-level `rules` key, which holds an
 }
 ```
 
-#### Example Usage
-```bash
-vlite check "mysql://..." --rules "test_data/validate_merge.json"
+#### Output Formats & Interpretation
+
+**Standard Output** - Summary table showing rule status:
+```
+Rule                    Parameters              Status   Failed Records
+not_null(id)           column=id               PASSED   0/1000
+unique(email)          column=email            FAILED   15/1000
+range(age, 18, 99)     column=age, min=18...   PASSED   0/1000
 ```
 
----
+**Verbose Output** (`--verbose`) - Includes failure samples:
+```
+Rule: unique(email)
+Status: FAILED
+Failed Records: 15/1000
+Sample Failed Data:
+  Row 23: john@example.com
+  Row 45: john@example.com
+  Row 67: mary@test.com
+```
 
-## Command Options
+#### Practical Examples
 
-| Option      | Description                                                                  |
-|-------------|------------------------------------------------------------------------------|
-| `--verbose` | Shows detailed results, including samples of failing data for each rule.     |
-| `--quiet`   | Suppresses detailed output and shows only a final summary table.             |
-| `--help`    | Displays a help message with all available commands and options.             |
-
----
-
-## Output Interpretation
-
-- **Standard Output**: By default, the CLI prints a summary table showing each rule, its parameters, and the final status (`PASSED` or `FAILED`).
-- **Verbose Output (`--verbose`)**: In addition to the summary, it provides details for failed rules, including the number of failed rows and a sample of the invalid data.
-- **Exit Codes**:
-  - `0`: All rules passed.
-  - `1`: One or more rules failed.
-  - `>1`: An application error occurred (e.g., invalid connection, file not found).
-
----
-
-## Practical Examples
-
-Here are some scenarios based on the E2E test suite.
-
-#### 1. Check for `NULL` values in a specific column
+**1. Basic file validation:**
 ```bash
-# Expect: PASSED if 'name' has no nulls, FAILED otherwise.
 vlite check test_data/customers.xlsx --rule "not_null(name)"
 ```
 
-#### 2. Check for uniqueness and valid email format with verbose output
+**2. Multiple rules with verbose output:**
 ```bash
-# Expect: FAILED for both rules, with sample data showing duplicate and invalid emails.
 vlite check test_data/customers.xlsx \
   --rule "unique(email)" \
   --rule "regex(email, '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$')" \
   --verbose
 ```
 
-#### 3. Run a comprehensive validation using a rules file
+**3. Comprehensive validation using rules file:**
 ```bash
-# Use a file with multiple rules for a complete check
-vlite check "mysql://root:root123@localhost:3306/data_quality.customers" \
-  --rules "test_data/validate_merge.json" \
+vlite check "mysql://root:password@localhost:3306/data_quality.customers" \
+  --rules "validation_rules.json" \
   --verbose
 ```
 
-#### 4. Validate multiple rules on a CSV file
+**4. CSV file with multiple constraints:**
 ```bash
 vlite check examples/sample_data.csv \
   --rule "not_null(customer_id)" \
@@ -319,70 +249,521 @@ vlite check examples/sample_data.csv \
   --verbose
 ```
 
----
+#### Exit Codes
 
-## Error Handling
-
-The CLI is designed to handle common issues gracefully.
-
-- **File Not Found**: If the specified data source file does not exist, it will exit with an error.
-- **Connection Error**: For database sources, it will report an error if the connection cannot be established (e.g., wrong credentials, host unreachable).
-- **Invalid Rule Syntax**: If a rule provided via `--rule` or in a rules file is malformed, the CLI will report a parsing error.
-- **No Rules Specified**: The command will fail if you do not provide at least one rule via `--rule` or `--rules`.
-
-### Common Error Messages and Solutions
-
-| Error Message | Cause | Solution |
-|---------------|-------|----------|
-| `File not found` | The specified file path is incorrect | Check the file path and ensure the file exists |
-| `Connection failed` | Database connection parameters are wrong | Verify database credentials and connection string |
-| `Invalid rule syntax` | Rule format is incorrect | Check the rule syntax against the supported formats |
-| `No rules specified` | No validation rules were provided | Add at least one `--rule` or `--rules` parameter |
+- `0` - All rules passed
+- `1` - One or more rules failed
+- `>1` - Application error (invalid connection, file not found, etc.)
 
 ---
 
-## Configuration
+### The `schema` Command - Schema Validation
 
-ValidateLite supports configuration through TOML files and environment variables.
+The `schema` command validates tables against JSON schema files, automatically decomposing schemas into atomic rules with intelligent prioritization and aggregation.
+
+#### Basic Syntax & Parameters
+
+```bash
+vlite schema <data_source> --rules <schema_file.json> [options]
+```
+
+**Required Parameters:**
+- `<data_source>` - Database/table identifier (table derived from URL)
+- `--rules <file.json>` - Path to JSON schema file
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `--output table\|json` | Output format (default: table) |
+| `--verbose` | Show detailed information in table mode |
+| `--help` | Display command help |
+
+#### Schema File Structure (v1)
+
+**Minimal Structure:**
+```json
+{
+  "rules": [
+    { "field": "id", "type": "integer", "required": true },
+    { "field": "age", "type": "integer", "min": 0, "max": 120 },
+    { "field": "gender", "type": "string", "enum": ["M", "F"] },
+    { "field": "email", "type": "string", "required": true },
+    { "field": "created_at", "type": "datetime" }
+  ],
+  "strict_mode": true,
+  "case_insensitive": false
+}
+```
+
+**Supported Field Types:**
+- `string`, `integer`, `float`, `boolean`, `date`, `datetime`
+
+**Schema Properties:**
+- `field` - Column name (required)
+- `type` - Data type (required)
+- `required` - Generate NOT_NULL rule if true
+- `min`/`max` - Generate RANGE rule for numeric types
+- `enum` - Generate ENUM rule with allowed values
+- `strict_mode` - Report extra columns as violations
+- `case_insensitive` - Case-insensitive column matching
+
+#### Rule Decomposition Logic
+
+The schema command automatically converts each field definition into atomic validation rules:
+
+```
+Schema Field → Generated Rules
+═══════════════════════════════
+{ "field": "age", "type": "integer", "required": true, "min": 0, "max": 120 }
+                ↓
+1. SCHEMA rule: Check "age" field exists and is integer type
+2. NOT_NULL rule: Check "age" has no null values
+3. RANGE rule: Check "age" values between 0 and 120
+```
+
+**Execution Priority & Skip Logic:**
+1. **Field Missing** → Report FIELD_MISSING, skip all other checks for that field
+2. **Type Mismatch** → Report TYPE_MISMATCH, skip dependent checks (NOT_NULL, RANGE, ENUM)
+3. **All Other Rules** → Execute normally if field exists and type matches
+
+#### Output Formats
+
+**Table Mode (default)** - Column-grouped summary:
+```
+Column Validation Results
+═════════════════════════
+Column: id
+  ✓ Field exists (integer)
+  ✓ Not null constraint
+
+Column: age
+  ✓ Field exists (integer)
+  ✗ Range constraint (0-120): 5 violations
+
+Column: status
+  ✗ Field missing
+  ⚠ Dependent checks skipped
+```
+
+**JSON Mode** (`--output json`) - Machine-readable format:
+```json
+{
+  "summary": {
+    "total_checks": 8,
+    "passed": 5,
+    "failed": 2,
+    "skipped": 1
+  },
+  "results": [...],
+  "fields": {
+    "id": { "status": "passed", "checks": [...] },
+    "age": { "status": "failed", "checks": [...] }
+  },
+  "schema_extras": ["unknown_column"]
+}
+```
+
+#### Practical Examples
+
+**1. Basic schema validation:**
+```bash
+vlite schema "mysql://root:password@localhost:3306/data_quality.customers" \
+  --rules test_data/schema.json
+```
+
+**2. JSON output for automation:**
+```bash
+vlite schema "mysql://user:pass@host:3306/sales.users" \
+  --rules schema.json \
+  --output json
+```
+
+**3. Verbose table output:**
+```bash
+vlite schema "postgresql://user:pass@localhost:5432/app.customers" \
+  --rules customer_schema.json \
+  --verbose
+```
+
+#### Exit Codes
+
+- `0` - All schema checks passed
+- `1` - One or more schema violations found (or --fail-on-error triggered)
+- `≥2` - Usage error (invalid JSON, unsupported schema structure, etc.)
+
+---
+
+## Advanced Usage
+
+### Data Source Configuration
+
+#### File-Based Sources
+
+**Supported Formats:**
+- CSV, TSV (comma/tab separated values)
+- Excel (.xls, .xlsx)
+- JSON, JSONL (JSON Lines)
+
+**Examples:**
+```bash
+# CSV with custom delimiter (auto-detected)
+vlite check data/customers.csv --rule "not_null(id)"
+
+# Excel file (auto-detects first sheet)
+vlite check reports/monthly_data.xlsx --rule "unique(transaction_id)"
+
+# JSON Lines file
+vlite check logs/events.jsonl --rule "not_null(timestamp)"
+```
+
+#### Database Sources
+
+**Connection String Formats:**
+
+**MySQL:**
+```
+mysql://[username[:password]@]host[:port]/database.table
+```
+
+**PostgreSQL:**
+```
+postgresql://[username[:password]@]host[:port]/database.table
+```
+
+**SQLite:**
+```
+sqlite:///[absolute_path_to_file].table
+sqlite://[relative_path_to_file].table
+```
+
+**Connection Examples:**
+```bash
+# MySQL with authentication
+vlite check "mysql://admin:secret123@db.company.com:3306/sales.customers" --rule "unique(id)"
+
+# PostgreSQL with default port
+vlite check "postgresql://analyst@analytics-db/warehouse.orders" --rules validation.json
+
+# SQLite local file
+vlite check "sqlite:///data/local.db.users" --rule "not_null(email)"
+```
+
+### Validation Rules Deep Dive
+
+#### Rule Parameters & Behavior
+
+**Completeness Rules:**
+```bash
+# Check for NULL, empty strings, or whitespace-only values
+--rule "not_null(email)"
+```
+
+**Uniqueness Rules:**
+```bash
+# Check for exact duplicates (case-sensitive)
+--rule "unique(customer_id)"
+```
+
+**Validity Rules:**
+```bash
+# Regex pattern matching
+--rule "regex(phone, '^\+?[1-9]\d{1,14}$')"
+
+# Enumerated values (case-sensitive)
+--rule "enum(status, 'active', 'inactive', 'pending')"
+
+# Date format validation (MySQL only)
+--rule "date_format(created_at, '%Y-%m-%d %H:%i:%s')"
+```
+
+**Consistency Rules:**
+```bash
+# Numeric ranges (inclusive)
+--rule "range(age, 0, 150)"
+--rule "range(salary, 20000.00, 500000.00)"
+
+# String length constraints
+--rule "length(product_code, 8, 12)"
+```
+
+#### JSON Rule File Best Practices
+
+**Well-structured rules file:**
+```json
+{
+  "rules": [
+    {
+      "type": "not_null",
+      "column": "customer_id",
+      "description": "Customer ID is required for all records"
+    },
+    {
+      "type": "unique",
+      "column": "customer_id",
+      "description": "Customer ID must be unique across all records"
+    },
+    {
+      "type": "regex",
+      "column": "email",
+      "params": {
+        "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+      },
+      "description": "Email must be in valid format"
+    },
+    {
+      "type": "enum",
+      "column": "subscription_type",
+      "params": {
+        "values": ["free", "basic", "premium", "enterprise"]
+      },
+      "description": "Subscription type must be one of the defined tiers"
+    }
+  ]
+}
+```
+
+**Tips:**
+- Always include descriptive messages
+- Group related rules together
+- Use consistent parameter naming
+- Validate your JSON syntax before use
+
+### Output & Reporting
+
+#### Understanding Results
+
+**Rule Status Meanings:**
+- `PASSED` - All records satisfy the rule
+- `FAILED` - Some records violate the rule
+- `SKIPPED` - Rule was not executed (dependency failed)
+
+**Failed Record Counts:**
+- Format: `failed_count/total_count`
+- Example: `15/1000` means 15 out of 1000 records failed
+
+**Sample Data in Verbose Mode:**
+- Shows actual values that caused failures
+- Limited to first few samples to avoid clutter
+- Includes row numbers for easy debugging
+
+#### JSON Output Schema
+
+For the `schema` command with `--output json`, the response follows this structure:
+
+```json
+{
+  "summary": {
+    "total_checks": 12,
+    "passed": 8,
+    "failed": 3,
+    "skipped": 1,
+    "execution_time_ms": 1250
+  },
+  "results": [
+    {
+      "rule_type": "SCHEMA",
+      "column": "age",
+      "status": "PASSED",
+      "message": "Field exists with correct type",
+      "failed_count": 0,
+      "total_count": 1000
+    }
+  ],
+  "fields": {
+    "age": {
+      "status": "passed",
+      "checks": ["existence", "type", "not_null", "range"]
+    },
+    "unknown_field": {
+      "status": "extra",
+      "checks": []
+    }
+  },
+  "schema_extras": ["unknown_field"]
+}
+```
+
+**Full JSON schema definition:** `docs/schemas/schema_results.schema.json`
+
+---
+
+## Configuration & Environment
 
 ### Configuration Files
 
-Example configuration files are available in the `config/` directory:
-- `cli.toml.example` - CLI-specific configuration
-- `core.toml.example` - Core engine configuration
-- `logging.toml.example` - Logging configuration
+ValidateLite uses TOML configuration files for advanced settings. Example files are provided in the `config/` directory:
 
-To use these configurations:
-
-1. Copy the example files:
+**Setup:**
 ```bash
+# Copy example configurations
 cp config/cli.toml.example config/cli.toml
 cp config/core.toml.example config/core.toml
 cp config/logging.toml.example config/logging.toml
 ```
 
-2. Modify the files according to your needs.
+**CLI Configuration (`config/cli.toml`):**
+```toml
+# Default command options
+default_verbose = false
+default_quiet = false
+max_sample_size = 5
+
+# Output formatting
+table_max_width = 120
+json_indent = 2
+```
+
+**Core Configuration (`config/core.toml`):**
+```toml
+# Database settings
+connection_timeout = 30
+query_timeout = 300
+max_connections = 10
+
+# Rule execution
+parallel_execution = true
+batch_size = 1000
+```
+
+**Logging Configuration (`config/logging.toml`):**
+```toml
+level = "INFO"
+format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+to_file = false
+file_path = "logs/validatelite.log"
+```
 
 ### Environment Variables
 
-For sensitive information like database credentials, use environment variables:
-
+**Configuration Path Overrides:**
 ```bash
+export CORE_CONFIG_PATH=/path/to/custom/core.toml
+export CLI_CONFIG_PATH=/path/to/custom/cli.toml
+export LOGGING_CONFIG_PATH=/path/to/custom/logging.toml
+```
+
+**Database Credentials:**
+```bash
+# Use environment variables for sensitive information
 export DB_HOST=localhost
 export DB_USER=myuser
 export DB_PASSWORD=mypassword
 export DB_NAME=mydatabase
+
+# Full connection URLs
+export MYSQL_DB_URL="mysql://user:pass@host:3306/db"
+export POSTGRESQL_DB_URL="postgresql://user:pass@host:5432/db"
 ```
 
-### Configuration Reference
+**Configuration Loading Order:**
+1. Default values (in Pydantic models)
+2. Configuration files (TOML)
+3. Environment variables
+4. Command-line arguments
 
-For detailed configuration options, see [CONFIG_REFERENCE.md](../CONFIG_REFERENCE.md).
+---
+
+## Troubleshooting
+
+### Common Error Messages
+
+| Error Message | Cause | Solution |
+|---------------|-------|----------|
+| `File not found: data.csv` | Incorrect file path | Verify file exists and path is correct |
+| `Connection failed: Access denied` | Wrong database credentials | Check username/password in connection string |
+| `Invalid rule syntax: not_nul(id)` | Typo in rule specification | Fix rule syntax: `not_null(id)` |
+| `No rules specified` | Missing --rule or --rules | Add at least one validation rule |
+| `Unsupported database type: oracle` | Database not supported | Use MySQL, PostgreSQL, or SQLite |
+| `JSON parse error in rules file` | Malformed JSON | Validate JSON syntax in rules file |
+
+### Connection Issues
+
+**Database Connection Problems:**
+
+1. **Test connection manually:**
+```bash
+# MySQL
+mysql -h host -u user -p database
+
+# PostgreSQL
+psql -h host -U user -d database
+```
+
+2. **Check firewall/network:**
+```bash
+# Test port connectivity
+telnet database_host 3306  # MySQL
+telnet database_host 5432  # PostgreSQL
+```
+
+3. **Verify credentials:**
+- Ensure user has SELECT permissions
+- Check password special characters are URL-encoded
+- Confirm database and table names are correct
+
+**File Access Problems:**
+```bash
+# Check file permissions
+ls -la data/customers.csv
+
+# Verify file format
+file data/customers.csv
+head -n 5 data/customers.csv
+```
+
+### Performance Tips
+
+**For Large Datasets:**
+1. **Use database sources when possible** - Direct database queries are typically faster than loading entire files
+2. **Enable batching in config** - Set appropriate `batch_size` in core configuration
+3. **Limit sample output** - Use `--quiet` for large-scale validation
+4. **Optimize rules** - Put fast rules (like `not_null`) before expensive ones (like `regex`)
+
+**Memory Management:**
+```toml
+# In config/core.toml
+batch_size = 10000        # Process in smaller chunks
+max_connections = 5       # Limit concurrent database connections
+query_timeout = 600       # Increase timeout for large queries
+```
+
+**Parallel Processing:**
+```toml
+# In config/core.toml
+parallel_execution = true # Enable parallel rule execution
+```
 
 ---
 
 ## Getting Help
 
-- **Command Help**: `vlite --help` or `vlite check --help`
-- **Documentation**: [README.md](../README.md) for installation and basic usage
-- **Development**: [DEVELOPMENT_SETUP.md](DEVELOPMENT_SETUP.md) for contributors
-- **Issues**: Report bugs and feature requests on the project's GitHub page
+### Command Line Help
+```bash
+# General help
+vlite --help
+
+# Command-specific help
+vlite check --help
+vlite schema --help
+```
+
+### Documentation Resources
+- **[README.md](../README.md)** - Installation and quick start
+- **[DEVELOPMENT_SETUP.md](DEVELOPMENT_SETUP.md)** - Development environment setup
+- **[CONFIG_REFERENCE.md](CONFIG_REFERENCE.md)** - Complete configuration reference
+- **[CHANGELOG.md](../CHANGELOG.md)** - Version history and changes
+
+### Support Channels
+- **GitHub Issues** - Bug reports and feature requests
+- **GitHub Discussions** - Questions and community support
+- **Documentation** - Comprehensive guides and examples
+
+### Example Files
+The project includes working examples in the `examples/` directory:
+- `sample_data.csv` - Sample dataset for testing
+- `sample_rules.json` - Example validation rules
+- `basic_usage.py` - Python API examples
+
+---
+
+*For more advanced usage patterns and API documentation, visit the project repository.*

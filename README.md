@@ -14,6 +14,7 @@ Follow the journey of building ValidateLite through our development blog posts:
 
 - **[DevLog #1: Building a Zero-Config Data Validation Tool](https://blog.litedatum.com/posts/Devlog01-data-validation-tool/)** - The initial vision and architecture of ValidateLite
 - **[DevLog #2: Why I Scrapped My Half-Built Data Validation Platform](https://blog.litedatum.com/posts/Devlog02-Rethinking-My-Data-Validation-Tool/)** - Lessons learned from scope creep and the pivot to a focused CLI tool
+- **[Rule-Driven Schema Validation: A Lightweight Solution](https://blog.litedatum.com/posts/Rule-Driven-Schema-Validation/)** - Deep dive into schema drift challenges and how ValidateLite's schema validation provides a lightweight alternative to complex frameworks
 
 ---
 
@@ -87,7 +88,7 @@ See [DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md) for detailed development s
 - **⚙️ Configurable & Modular**: Flexible configuration via TOML and environment variables
 - **🛡️ Comprehensive Error Handling**: Robust exception and error classification system
 - **🧪 Tested & Reliable**: High code coverage, modular tests, and pre-commit hooks
-- **📐 Schema Validation Command**: High-level schema file → atomic rules decomposition with root-cause prioritization and column-grouped reporting
+- **📐 Schema Drift Prevention**: Lightweight schema validation that prevents data pipeline failures from unexpected schema changes - a simple alternative to complex validation frameworks
 
 ---
 
