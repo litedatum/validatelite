@@ -25,7 +25,10 @@ from tests.shared.utils.database_utils import (
 
 
 def generate_customer_data(count: int = 1000) -> List[Tuple]:
-    """Generate test customer data with specific patterns to ensure test cases pass/fail consistently."""
+    """
+    Generate test customer data with specific patterns to
+    ensure test cases pass/fail consistently.
+    """
     names = [
         "Alice",
         "Bob",

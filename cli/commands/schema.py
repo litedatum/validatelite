@@ -315,11 +315,10 @@ def _build_prioritized_atomic_status(
     # Build per-column guard from SCHEMA details
     column_guard: Dict[str, str] = {}  # column -> NONE|FIELD_MISSING|TYPE_MISMATCH
     if schema_result:
-        details = (
-            schema_result.get("execution_plan", {})
-            .get("schema_details", {})
-            .get("field_results", [])
-        )
+        # Safely access nested dictionaries, checking for None at each level.
+        execution_plan = schema_result.get("execution_plan") or {}
+        schema_details = execution_plan.get("schema_details") or {}
+        details = schema_details.get("field_results") or []
         for item in details:
             col = str(item.get("column"))
             code = str(item.get("failure_code", "NONE"))
@@ -729,11 +728,9 @@ def _emit_table_output(
 
     column_guard: Dict[str, str] = {}
     if schema_result_dict:
-        details = (
-            schema_result_dict.get("execution_plan", {})
-            .get("schema_details", {})
-            .get("field_results", [])
-        )
+        execution_plan = schema_result_dict.get("execution_plan") or {}
+        schema_details = execution_plan.get("schema_details") or {}
+        details = schema_details.get("field_results") or []
         for item in details:
             col = str(item.get("column"))
             column_guard[col] = str(item.get("failure_code", "NONE"))
@@ -888,7 +885,8 @@ def schema_command(
     """Schema validation command with minimal rules file validation.
 
     NEW FORMAT:
-        vlite-cli schema --conn <connection> --table <table_name> --rules <rules_file> [options]
+        vlite-cli schema --conn <connection> --table <table_name> \
+            --rules <rules_file> [options]
 
     SOURCE can be:
     - File path: users.csv, data.xlsx, records.json
@@ -897,7 +895,8 @@ def schema_command(
 
     Examples:
         vlite-cli schema --conn users.csv --table users --rules schema.json
-        vlite-cli schema --conn mysql://user:pass@host/db --table users --rules schema.json
+        vlite-cli schema --conn mysql://user:pass@host/db --table users \
+            --rules schema.json
     """
 
     from cli.core.config import get_cli_config
@@ -918,7 +917,25 @@ def schema_command(
         # Decompose into atomic rules per design
         atomic_rules = _decompose_to_atomic_rules(rules_payload)
 
-        # Fast-path: no rules → emit minimal payload and exit cleanly
+        # FIX: Manually populate the target table and database from CLI args
+        # The source_config object is a class instance, not a dict.
+        # Use attribute access.
+        source_db = source_config.db_name
+        if not source_db:
+            source_db = "unknown"
+
+        for rule in atomic_rules:
+            if rule.target and rule.target.entities:
+                rule.target.entities[0].database = source_db
+                rule.target.entities[0].table = table_name
+
+        # get database name from SourceParser results
+        # source_db = source_config.get('database')
+        # for rule in atomic_rules:
+        #     if rule.target and rule.target.entities:
+        #         rule.target.entities[0].database = source_db
+        #         rule.target.entities[0].table = table_name
+        # Fast-path: no rules -> emit minimal payload and exit cleanly
         if len(atomic_rules) == 0:
             _early_exit_when_no_rules(
                 source=connection_string,

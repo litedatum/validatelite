@@ -157,7 +157,7 @@ class TestCheckCommandModern:
 
         # Verify call patterns
         mock_source_parser.return_value.parse_source.assert_called_once_with(
-            sample_csv_data
+            sample_csv_data, "users"
         )
         mock_rule_parser.return_value.parse_rules.assert_called_once()
         mock_validator_instance.validate.assert_called_once()

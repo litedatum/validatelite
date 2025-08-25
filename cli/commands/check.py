@@ -85,7 +85,8 @@ def check_command(
 
     Examples:
         vlite-cli check --conn users.csv --table users --rule "not_null(id)"
-        vlite-cli check --conn mysql://user:pass@host/db --table users --rules validation.json
+        vlite-cli check --conn mysql://user:pass@host/db \
+            --table users --rules validation.json
     """
     # Record start time
     start_time = now()

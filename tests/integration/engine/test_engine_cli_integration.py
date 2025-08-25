@@ -215,7 +215,15 @@ class TestEngineCliIntegrationModern(PerformanceTestBase):
         # Execute CLI command
         result = cli_runner.invoke(
             check_command,
-            [test_csv_data, "--rules", validation_rules_file, "--verbose"],
+            [
+                "--conn",
+                test_csv_data,
+                "--table",
+                "test_data",
+                "--rules",
+                validation_rules_file,
+                "--verbose",
+            ],
         )
 
         # Verify CLI executed successfully
@@ -289,7 +297,10 @@ class TestEngineCliIntegrationModern(PerformanceTestBase):
         result = cli_runner.invoke(
             check_command,
             [
+                "--conn",
                 test_csv_data,
+                "--table",
+                "test_data",
                 "--rule",
                 "not_null(name)",
                 "--rule",
@@ -338,7 +349,8 @@ class TestEngineCliIntegrationModern(PerformanceTestBase):
 
         # Execute CLI command
         result = cli_runner.invoke(
-            check_command, [test_csv_data, "--rule", "not_null(id)"]
+            check_command,
+            ["--conn", test_csv_data, "--table", "test_data", "--rule", "not_null(id)"],
         )
 
         # CLI should handle the error gracefully
@@ -428,7 +440,10 @@ class TestEngineCliIntegrationModern(PerformanceTestBase):
                 cli_result = cli_runner.invoke(
                     check_command,
                     [
+                        "--conn",
                         test_data,
+                        "--table",
+                        "test_data",
                         *[item for rule in inline_rules for item in ["--rule", rule]],
                     ],
                 )
@@ -527,7 +542,10 @@ class TestEngineCliIntegrationModern(PerformanceTestBase):
                 func=lambda: cli_runner.invoke(
                     check_command,
                     [
+                        "--conn",
                         large_dataset,
+                        "--table",
+                        "large_dataset",
                         "--rule",
                         "not_null(id)",
                         "--rule",
@@ -549,7 +567,10 @@ class TestEngineCliIntegrationModern(PerformanceTestBase):
             result = cli_runner.invoke(
                 check_command,
                 [
+                    "--conn",
                     large_dataset,
+                    "--table",
+                    "large_dataset",
                     "--rule",
                     "not_null(id)",
                     "--rule",
@@ -649,7 +670,8 @@ class TestEngineCliIntegrationModern(PerformanceTestBase):
         try:
             # Execute CLI command on empty data
             result = cli_runner.invoke(
-                check_command, [empty_csv, "--rule", "not_null(id)"]
+                check_command,
+                ["--conn", empty_csv, "--table", "test_data", "--rule", "not_null(id)"],
             )
 
             # Should handle empty data gracefully
@@ -684,7 +706,10 @@ class TestEngineCliIntegrationModern(PerformanceTestBase):
                         sys.executable,
                         "cli_main.py",
                         "check",
+                        "--conn",
                         test_csv_data,
+                        "--table",
+                        "test_data",
                         "--rule",
                         "not_null(id)",
                         "--quiet",

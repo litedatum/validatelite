@@ -84,7 +84,7 @@ class TestCheckCommandNewInterface:
         sample_csv_data: str,
         sample_rules_file: str,
         mock_components: Dict[str, Any],
-    ):
+    ) -> None:
         """Test the new --conn and --table interface"""
         # Setup mocks using the same pattern as successful tests
         mock_cli_config.return_value = Mock()
@@ -140,7 +140,7 @@ class TestCheckCommandNewInterface:
         mock_cli_config: Mock,
         runner: CliRunner,
         sample_csv_data: str,
-    ):
+    ) -> None:
         """Test that --table is required when using --conn"""
         # Execute command with --conn but no --table
         result = runner.invoke(check_command, ["--conn", sample_csv_data])
@@ -164,7 +164,7 @@ class TestCheckCommandNewInterface:
         mock_core_config: Mock,
         mock_cli_config: Mock,
         runner: CliRunner,
-    ):
+    ) -> None:
         """Test that --conn is required when using --table"""
         # Execute command with --table but no --conn
         result = runner.invoke(check_command, ["--table", "users"])
@@ -190,7 +190,7 @@ class TestCheckCommandNewInterface:
         runner: CliRunner,
         sample_csv_data: str,
         mock_components: Dict[str, Any],
-    ):
+    ) -> None:
         """Test new interface with inline rules"""
         # Setup mocks using the same pattern as successful tests
         mock_cli_config.return_value = Mock()
@@ -249,7 +249,7 @@ class TestCheckCommandNewInterface:
         runner: CliRunner,
         sample_rules_file: str,
         mock_components: Dict[str, Any],
-    ):
+    ) -> None:
         """Test new interface with database connection"""
         # Setup mocks using the same pattern as successful tests
         mock_cli_config.return_value = Mock()
@@ -306,7 +306,7 @@ class TestCheckCommandNewInterface:
         runner: CliRunner,
         sample_rules_file: str,
         mock_components: Dict[str, Any],
-    ):
+    ) -> None:
         """Test new interface with SQLite file"""
         # Setup mocks using the same pattern as successful tests
         mock_cli_config.return_value = Mock()
@@ -365,7 +365,7 @@ class TestCheckCommandNewInterface:
         runner: CliRunner,
         sample_csv_data: str,
         mock_components: Dict[str, Any],
-    ):
+    ) -> None:
         """Test error when no rules are specified"""
         # Execute command without rules
         result = runner.invoke(
@@ -393,7 +393,7 @@ class TestCheckCommandNewInterface:
         runner: CliRunner,
         sample_rules_file: str,
         mock_components: Dict[str, Any],
-    ):
+    ) -> None:
         """Test error when source file is empty"""
         # Create empty file
         with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
@@ -415,7 +415,7 @@ class TestCheckCommandNewInterface:
     def test_table_name_parameter_passed_to_source_parser(
         self,
         runner: CliRunner,
-    ):
+    ) -> None:
         """Test that table_name parameter is correctly passed to SourceParser.parse_source"""
         with patch("cli.commands.check.SourceParser") as mock_source_parser_class:
             # Setup mock
@@ -490,7 +490,7 @@ class TestCheckCommandNewInterface:
     def test_table_name_parameter_with_database_connection(
         self,
         runner: CliRunner,
-    ):
+    ) -> None:
         """Test that table_name parameter is correctly passed when using database connection"""
         with patch("cli.commands.check.SourceParser") as mock_source_parser_class:
             # Setup mock
@@ -568,7 +568,7 @@ class TestCheckCommandNewInterface:
     def test_table_name_parameter_overrides_url_table(
         self,
         runner: CliRunner,
-    ):
+    ) -> None:
         """Test that --table parameter overrides table name from URL when both are present"""
         with patch("cli.commands.check.SourceParser") as mock_source_parser_class:
             # Setup mock

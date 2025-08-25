@@ -8,16 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- None
+- feat(cli): refactor check command interface from positional arguments to `--conn` and `--table` options
+- feat(cli): add comprehensive test coverage for new CLI interface functionality
+- feat(cli): support explicit table name specification independent of database URL
 
 ### Changed
-- None
+- **BREAKING CHANGE**: CLI interface changed from `vlite-cli check <source>` to `vlite-cli check --conn <connection> --table <table_name>`
+- refactor(cli): update SourceParser to accept optional table_name parameter
+- refactor(cli): modify check command to pass table_name to SourceParser.parse_source()
+- refactor(tests): update all existing CLI tests to use new interface format
+- refactor(tests): add new test cases specifically for table name parameter validation
 
 ### Fixed
-- None
+- fix(cli): resolve issue where `--table` parameter was not correctly passed to backend
+- fix(cli): ensure table name from `--table` option takes precedence over table name in database URL
+- fix(tests): update regression tests to use new CLI interface format
+- fix(tests): resolve test failures caused by interface changes
 
 ### Removed
-- None
+- **BREAKING CHANGE**: remove backward compatibility for old positional argument interface
+- remove(cli): eliminate support for `<source>` positional argument in check command
 
 ## [0.4.0] - 2025-01-27
 
