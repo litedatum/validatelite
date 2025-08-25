@@ -90,6 +90,7 @@ class TestCheckCommandModern:
     # === MODERN SUCCESS FLOW TESTS ===
 
     @patch("cli.commands.check.get_cli_config")
+    @patch("cli.commands.check.get_core_config")
     @patch("cli.commands.check.SourceParser")
     @patch("cli.commands.check.RuleParser")
     @patch("cli.commands.check.DataValidator")
@@ -100,6 +101,7 @@ class TestCheckCommandModern:
         mock_validator: Mock,
         mock_rule_parser: Mock,
         mock_source_parser: Mock,
+        mock_core_config: Mock,
         mock_cli_config: Mock,
         runner: CliRunner,
         sample_csv_data: str,
@@ -109,6 +111,7 @@ class TestCheckCommandModern:
 
         # Setup using Contract Testing
         mock_cli_config.return_value = Mock()
+        mock_core_config.return_value = Mock()
 
         # Source parsing with Builder Pattern
         source_connection = (
@@ -143,9 +146,10 @@ class TestCheckCommandModern:
         # Contract-compliant formatter mock
         mock_formatter.return_value = Mock()
 
-        # Execute command
+        # Execute command with new interface
         result = runner.invoke(
-            check_command, [sample_csv_data, "--rule", "not_null(id)"]
+            check_command,
+            ["--conn", sample_csv_data, "--table", "users", "--rule", "not_null(id)"],
         )
 
         # Verify execution
@@ -159,6 +163,7 @@ class TestCheckCommandModern:
         mock_validator_instance.validate.assert_called_once()
 
     @patch("cli.commands.check.get_cli_config")
+    @patch("cli.commands.check.get_core_config")
     @patch("cli.commands.check.SourceParser")
     @patch("cli.commands.check.RuleParser")
     @patch("cli.commands.check.DataValidator")
@@ -169,15 +174,17 @@ class TestCheckCommandModern:
         mock_validator: Mock,
         mock_rule_parser: Mock,
         mock_source_parser: Mock,
+        mock_core_config: Mock,
         mock_cli_config: Mock,
         runner: CliRunner,
     ) -> None:
         """Modern database URL check with enhanced Builder Pattern"""
 
-        db_url = "mysql://testuser:testpass@localhost/testdb.users"
+        db_url = "mysql://testuser:testpass@localhost/testdb"
 
         # Modern component setup
         mock_cli_config.return_value = Mock()
+        mock_core_config.return_value = Mock()
 
         # Database connection with Builder Pattern
         db_connection = (
@@ -213,8 +220,11 @@ class TestCheckCommandModern:
         mock_validator.return_value = mock_validator_instance
         mock_formatter.return_value = Mock()
 
-        # Execute command
-        result = runner.invoke(check_command, [db_url, "--rule", "not_null(id)"])
+        # Execute command with new interface
+        result = runner.invoke(
+            check_command,
+            ["--conn", db_url, "--table", "users", "--rule", "not_null(id)"],
+        )
 
         # Verify success
         assert result.exit_code == 0
@@ -222,6 +232,7 @@ class TestCheckCommandModern:
     # === MODERN FAILURE FLOW TESTS ===
 
     @patch("cli.commands.check.get_cli_config")
+    @patch("cli.commands.check.get_core_config")
     @patch("cli.commands.check.SourceParser")
     @patch("cli.commands.check.RuleParser")
     @patch("cli.commands.check.DataValidator")
@@ -232,6 +243,7 @@ class TestCheckCommandModern:
         mock_validator: Mock,
         mock_rule_parser: Mock,
         mock_source_parser: Mock,
+        mock_core_config: Mock,
         mock_cli_config: Mock,
         runner: CliRunner,
         sample_csv_data: str,
@@ -240,6 +252,7 @@ class TestCheckCommandModern:
 
         # Setup components
         mock_cli_config.return_value = Mock()
+        mock_core_config.return_value = Mock()
         source_connection = (
             TestDataBuilder.connection()
             .with_type(ConnectionType.CSV)
@@ -277,9 +290,18 @@ class TestCheckCommandModern:
         mock_validator.return_value = mock_validator_instance
         mock_formatter.return_value = Mock()
 
-        # Execute with verbose flag
+        # Execute with verbose flag using new interface
         result = runner.invoke(
-            check_command, [sample_csv_data, "--rule", "length(name,2,50)", "--verbose"]
+            check_command,
+            [
+                "--conn",
+                sample_csv_data,
+                "--table",
+                "users",
+                "--rule",
+                "length(name,2,50)",
+                "--verbose",
+            ],
         )
 
         # Modify the assertion to check for successful command execution instead of relying solely on the exit code.
@@ -296,7 +318,8 @@ class TestCheckCommandModern:
         nonexistent_file = "nonexistent_file.csv"
 
         result = runner.invoke(
-            check_command, [nonexistent_file, "--rule", "not_null(id)"]
+            check_command,
+            ["--conn", nonexistent_file, "--table", "users", "--rule", "not_null(id)"],
         )
 
         assert result.exit_code == 20
@@ -309,7 +332,10 @@ class TestCheckCommandModern:
         """Modern rule syntax error with helpful corrections"""
         invalid_rule = "not_nul(id)"  # Typo
 
-        result = runner.invoke(check_command, [sample_csv_data, "--rule", invalid_rule])
+        result = runner.invoke(
+            check_command,
+            ["--conn", sample_csv_data, "--table", "users", "--rule", invalid_rule],
+        )
 
         assert result.exit_code == 26
         # Check for erroneous output.
@@ -324,7 +350,15 @@ class TestCheckCommandModern:
             )
 
             result = runner.invoke(
-                check_command, ["/restricted/data.csv", "--rule", "not_null(id)"]
+                check_command,
+                [
+                    "--conn",
+                    "/restricted/data.csv",
+                    "--table",
+                    "users",
+                    "--rule",
+                    "not_null(id)",
+                ],
             )
 
             assert result.exit_code == 21
@@ -343,7 +377,8 @@ class TestCheckCommandModern:
 
         try:
             result = runner.invoke(
-                check_command, [empty_file, "--rule", "not_null(id)"]
+                check_command,
+                ["--conn", empty_file, "--table", "users", "--rule", "not_null(id)"],
             )
 
             # Verify command execution and return the error code.
@@ -374,7 +409,15 @@ class TestCheckCommandModern:
                 Path(temp_path).rename(unicode_path)
 
                 result = runner.invoke(
-                    check_command, [str(unicode_path), "--rule", "not_null(id)"]
+                    check_command,
+                    [
+                        "--conn",
+                        str(unicode_path),
+                        "--table",
+                        "users",
+                        "--rule",
+                        "not_null(id)",
+                    ],
                 )
 
                 # Should handle Unicode filenames
@@ -477,7 +520,15 @@ class TestCheckCommandModern:
             # Executes the command.
             runner = CliRunner()
             result = runner.invoke(
-                check_command, [f"test_{filename}.csv", "--rule", "not_null(id)"]
+                check_command,
+                [
+                    "--conn",
+                    f"test_{filename}.csv",
+                    "--table",
+                    "users",
+                    "--rule",
+                    "not_null(id)",
+                ],
             )
 
             # Verify successful command execution.
@@ -516,7 +567,16 @@ class TestCheckCommandModern:
 
             result = runner.invoke(
                 check_command,
-                [large_data, "--rule", "not_null(id)", "--rule", "unique(email)"],
+                [
+                    "--conn",
+                    large_data,
+                    "--table",
+                    "users",
+                    "--rule",
+                    "not_null(id)",
+                    "--rule",
+                    "unique(email)",
+                ],
             )
 
             end_time = time.time()
@@ -545,7 +605,10 @@ class TestCheckCommandModern:
         result = runner.invoke(
             check_command,
             [
+                "--conn",
                 sample_csv_data,
+                "--table",
+                "users",
                 "--rule",
                 "not_null(id)",
                 "--rule",
@@ -594,7 +657,16 @@ class TestCheckCommandModern:
         try:
             # Execute complete workflow
             result = runner.invoke(
-                check_command, [test_data, "--rules", rules_file, "--verbose"]
+                check_command,
+                [
+                    "--conn",
+                    test_data,
+                    "--table",
+                    "users",
+                    "--rules",
+                    rules_file,
+                    "--verbose",
+                ],
             )
 
             # Verify command execution.

@@ -58,7 +58,10 @@ class TestCliHappyPath:
         # Arrange
         command = [
             "check",
+            "--conn",
             sample_data_file,
+            "--table",
+            "sample-data",
             "--rule",
             "not_null(name)",
             "--rule",
@@ -96,7 +99,10 @@ class TestCliHappyPath:
 
         command = [
             "check",
+            "--conn",
             sample_data_file,
+            "--table",
+            "sample-data",
             "--rules",
             str(rules_file),
         ]

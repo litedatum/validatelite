@@ -269,7 +269,16 @@ class TestCliApplication:
                 ]
 
                 result = runner.invoke(
-                    cli_app, ["check", temp_file, "--rule", "not_null(id)"]
+                    cli_app,
+                    [
+                        "check",
+                        "--conn",
+                        temp_file,
+                        "--table",
+                        "users",
+                        "--rule",
+                        "not_null(id)",
+                    ],
                 )
 
                 # Should execute without critical errors
@@ -322,10 +331,14 @@ class TestCliApplication:
         """Test handling of extremely long command lines"""
         long_rule = "not_null(" + "a" * 1000 + ")"
 
-        result = runner.invoke(cli_app, ["check", "test.csv", "--rule", long_rule])
+        result = runner.invoke(
+            cli_app,
+            ["check", "--conn", "test.csv", "--table", "users", "--rule", long_rule],
+        )
 
         # Should handle gracefully (either succeed or fail with proper error)
-        assert result.exit_code in [20, 21, 22]
+        # Exit code 2 is Click's error exit code for missing required options
+        assert result.exit_code in [2, 20, 21, 22]
         assert (
             "Error:" in result.output
             or "Usage:" in result.output

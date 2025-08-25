@@ -52,12 +52,15 @@ class SourceParser:
             ".jsonl": ConnectionType.JSON,
         }
 
-    def parse_source(self, source: str) -> ConnectionSchema:
+    def parse_source(
+        self, source: str, table_name: Optional[str] = None
+    ) -> ConnectionSchema:
         """
         Parse source string into ConnectionSchema.
 
         Args:
             source: Source string (file path or database URL)
+            table_name: Optional table name (overrides table from URL if provided)
 
         Returns:
             ConnectionSchema: Parsed connection configuration
@@ -75,7 +78,7 @@ class SourceParser:
                 raise ValidationError("Unrecognized source format: Empty source")
 
             if self._is_database_url(source):
-                return self._parse_database_url(source)
+                return self._parse_database_url(source, table_name)
             elif source.startswith("file://"):
                 # Handle file:// protocol
                 file_path = source[7:]  # Remove file:// prefix
@@ -118,7 +121,9 @@ class SourceParser:
 
         return False
 
-    def _parse_database_url(self, url: str) -> ConnectionSchema:
+    def _parse_database_url(
+        self, url: str, table_name: Optional[str] = None
+    ) -> ConnectionSchema:
         """
         Parse database URL into connection configuration.
 
@@ -126,6 +131,10 @@ class SourceParser:
         - mysql://user:pass@host:port/database.table
         - postgres://user:pass@host:port/database.table
         - sqlite:///path/to/database.db.table
+
+        Args:
+            url: Database connection URL
+            table_name: Optional table name (overrides table from URL if provided)
         """
         self.logger.debug(f"Parsing database URL: {url}")
 
@@ -136,7 +145,10 @@ class SourceParser:
         parsed = urllib.parse.urlparse(url)
 
         # Extract database and table from path
-        database, table = self._extract_db_table_from_path(parsed.path)
+        database, table_from_url = self._extract_db_table_from_path(parsed.path)
+
+        # Use provided table_name if available, otherwise use table from URL
+        table = table_name if table_name is not None else table_from_url
 
         # Handle SQLite special case
         if conn_type == ConnectionType.SQLITE:

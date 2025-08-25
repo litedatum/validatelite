@@ -25,7 +25,7 @@ from tests.shared.utils.database_utils import (
 
 
 def generate_customer_data(count: int = 1000) -> List[Tuple]:
-    """Generate test customer data with specific patterns to ensure test cases pass."""
+    """Generate test customer data with specific patterns to ensure test cases pass/fail consistently."""
     names = [
         "Alice",
         "Bob",
@@ -101,7 +101,7 @@ def generate_customer_data(count: int = 1000) -> List[Tuple]:
             random.randint(18, 65),
             random.choice([0, 1]),
         ),
-        # Pattern 3: Duplicate emails (for unique test)
+        # Pattern 3: Duplicate emails (for unique email test)
         (
             f"{random.choice(names)}3001",
             "duplicate@example.com",
@@ -117,6 +117,25 @@ def generate_customer_data(count: int = 1000) -> List[Tuple]:
         (
             f"{random.choice(names)}3003",
             "duplicate@example.com",
+            random.randint(18, 65),
+            random.choice([0, 1]),
+        ),
+        # Pattern 6: Duplicate names (for unique name test)
+        (
+            "DuplicateName",
+            f"unique1@{random.choice(domains)}",
+            random.randint(18, 65),
+            random.choice([0, 1]),
+        ),
+        (
+            "DuplicateName",
+            f"unique2@{random.choice(domains)}",
+            random.randint(18, 65),
+            random.choice([0, 1]),
+        ),
+        (
+            "DuplicateName",
+            f"unique3@{random.choice(domains)}",
             random.randint(18, 65),
             random.choice([0, 1]),
         ),

@@ -130,7 +130,14 @@ class TestCliCommandsWithConfig:
                                     # Invoke the command
                                     result = runner.invoke(
                                         check_command,
-                                        ["test.csv", "--rule", "not_null(column1)"],
+                                        [
+                                            "--conn",
+                                            "test.csv",
+                                            "--table",
+                                            "users",
+                                            "--rule",
+                                            "not_null(column1)",
+                                        ],
                                     )
 
                                     # Verify configs were loaded
