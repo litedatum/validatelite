@@ -2,7 +2,7 @@
 Schema Command
 
 Adds `vlite-cli schema` command that parses parameters, performs minimal rules
-file validation (single-table only, no jsonschema), and prints placeholder
+file validation (supports both single-table and multi-table formats), and prints
 output aligned with the existing CLI style.
 """
 
@@ -20,6 +20,7 @@ from shared.enums import RuleAction, RuleCategory, RuleType, SeverityLevel
 from shared.enums.data_types import DataType
 from shared.schema.base import RuleTarget, TargetEntity
 from shared.schema.rule_schema import RuleSchema
+from shared.schema.connection_schema import ConnectionSchema
 from shared.utils.console import safe_echo
 from shared.utils.datetime_utils import now as _now
 from shared.utils.logger import get_logger
@@ -37,88 +38,119 @@ _ALLOWED_TYPE_NAMES: set[str] = {
 }
 
 
+def _validate_multi_table_rules_payload(payload: Any) -> Tuple[List[str], int]:
+    """Validate the structure of multi-table schema rules file.
+    
+    Multi-table format:
+    {
+      "table1": {
+        "rules": [...],
+        "strict_mode": true
+      },
+      "table2": {
+        "rules": [...]
+      }
+    }
+    
+    Returns:
+        warnings, total_rules_count
+    """
+    warnings: List[str] = []
+    total_rules = 0
+    
+    if not isinstance(payload, dict):
+        raise click.UsageError("Rules file must be a JSON object")
+    
+    # Check if this is a multi-table format (has table names as keys)
+    table_names = [key for key in payload.keys() if key != "rules"]
+    
+    if table_names:
+        # Multi-table format
+        for table_name in table_names:
+            table_schema = payload[table_name]
+            if not isinstance(table_schema, dict):
+                raise click.UsageError(f"Table '{table_name}' schema must be an object")
+            
+            table_rules = table_schema.get("rules")
+            if not isinstance(table_rules, list):
+                raise click.UsageError(f"Table '{table_name}' must have a 'rules' array")
+            
+            # Validate each rule in this table
+            for idx, item in enumerate(table_rules):
+                if not isinstance(item, dict):
+                    raise click.UsageError(f"Table '{table_name}' rules[{idx}] must be an object")
+                
+                # Validate rule fields
+                _validate_single_rule_item(item, f"Table '{table_name}' rules[{idx}]")
+            
+            total_rules += len(table_rules)
+            
+            # Validate optional table-level switches
+            if "strict_mode" in table_schema and not isinstance(table_schema["strict_mode"], bool):
+                raise click.UsageError(f"Table '{table_name}' strict_mode must be a boolean")
+            if "case_insensitive" in table_schema and not isinstance(table_schema["case_insensitive"], bool):
+                raise click.UsageError(f"Table '{table_name}' case_insensitive must be a boolean")
+    else:
+        # Single-table format (backward compatibility)
+        warnings.append("Single-table format detected; consider using multi-table format for better organization")
+        if "rules" not in payload:
+            raise click.UsageError("Single-table format must have a 'rules' array")
+        
+        rules = payload["rules"]
+        if not isinstance(rules, list):
+            raise click.UsageError("'rules' must be an array")
+        
+        for idx, item in enumerate(rules):
+            if not isinstance(item, dict):
+                raise click.UsageError(f"rules[{idx}] must be an object")
+            _validate_single_rule_item(item, f"rules[{idx}]")
+        
+        total_rules = len(rules)
+    
+    return warnings, total_rules
+
+
+def _validate_single_rule_item(item: Dict[str, Any], context: str) -> None:
+    """Validate a single rule item from the rules array."""
+    # field
+    field_name = item.get("field")
+    if not isinstance(field_name, str) or not field_name:
+        raise click.UsageError(f"{context}.field must be a non-empty string")
+
+    # type
+    if "type" in item:
+        type_name = item["type"]
+        if not isinstance(type_name, str):
+            raise click.UsageError(f"{context}.type must be a string when provided")
+        if type_name.lower() not in _ALLOWED_TYPE_NAMES:
+            allowed = ", ".join(sorted(_ALLOWED_TYPE_NAMES))
+            raise click.UsageError(
+                f"{context}.type '{type_name}' is not supported. "
+                f"Allowed: {allowed}"
+            )
+
+    # required
+    if "required" in item and not isinstance(item["required"], bool):
+        raise click.UsageError(f"{context}.required must be a boolean when provided")
+
+    # enum
+    if "enum" in item and not isinstance(item["enum"], list):
+        raise click.UsageError(f"{context}.enum must be an array when provided")
+
+    # min/max
+    for bound_key in ("min", "max"):
+        if bound_key in item:
+            value = item[bound_key]
+            if not isinstance(value, (int, float)):
+                raise click.UsageError(f"{context}.{bound_key} must be numeric when provided")
+
+
 def _validate_rules_payload(payload: Any) -> Tuple[List[str], int]:
     """Validate the minimal structure of the schema rules file.
 
-    This performs non-jsonschema checks:
-    - Top-level must be an object with a `rules` array
-    - Warn and ignore top-level `table` if present
-    - Validate each rule item fields and types:
-      - field: required str
-      - type: optional str in allowed set
-      - required: optional bool
-      - enum: optional list
-      - min/max: optional numeric (int or float)
-
-    Returns:
-        warnings, rules_count
-
-    Raises:
-        click.UsageError: if structure or types are invalid
+    This performs non-jsonschema checks for both single-table and multi-table formats.
     """
-    warnings: List[str] = []
-
-    if not isinstance(payload, dict):
-        raise click.UsageError("Rules file must be a JSON object with a 'rules' array")
-
-    if "table" in payload:
-        warnings.append(
-            "Top-level 'table' is ignored; table is derived from data-source"
-        )
-
-    if "tables" in payload:
-        # Explicitly reject multi-table format in v1
-        raise click.UsageError(
-            "'tables' is not supported in v1; use single-table 'rules' only"
-        )
-
-    rules = payload.get("rules")
-    if not isinstance(rules, list):
-        raise click.UsageError("'rules' must be an array")
-
-    for idx, item in enumerate(rules):
-        if not isinstance(item, dict):
-            raise click.UsageError(f"rules[{idx}] must be an object")
-
-        # field
-        field_name = item.get("field")
-        if not isinstance(field_name, str) or not field_name:
-            raise click.UsageError(f"rules[{idx}].field must be a non-empty string")
-
-        # type
-        if "type" in item:
-            type_name = item["type"]
-            if not isinstance(type_name, str):
-                raise click.UsageError(
-                    f"rules[{idx}].type must be a string when provided"
-                )
-            if type_name.lower() not in _ALLOWED_TYPE_NAMES:
-                allowed = ", ".join(sorted(_ALLOWED_TYPE_NAMES))
-                raise click.UsageError(
-                    f"rules[{idx}].type '{type_name}' is not supported. "
-                    f"Allowed: {allowed}"
-                )
-
-        # required
-        if "required" in item and not isinstance(item["required"], bool):
-            raise click.UsageError(
-                f"rules[{idx}].required must be a boolean when provided"
-            )
-
-        # enum
-        if "enum" in item and not isinstance(item["enum"], list):
-            raise click.UsageError(f"rules[{idx}].enum must be an array when provided")
-
-        # min/max
-        for bound_key in ("min", "max"):
-            if bound_key in item:
-                value = item[bound_key]
-                if not isinstance(value, (int, float)):
-                    raise click.UsageError(
-                        f"rules[{idx}].{bound_key} must be numeric when provided"
-                    )
-
-    return warnings, len(rules)
+    return _validate_multi_table_rules_payload(payload)
 
 
 def _map_type_name_to_datatype(type_name: str) -> DataType:
@@ -200,16 +232,108 @@ def _create_rule_schema(
     )
 
 
-def _decompose_to_atomic_rules(payload: Dict[str, Any]) -> List[RuleSchema]:
-    """Decompose schema JSON payload into atomic RuleSchema objects.
-
-    Rules per item:
-    - type -> contributes to table-level SCHEMA columns mapping
-    - required -> NOT_NULL(column)
-    - min/max -> RANGE(column, min_value/max_value)
-    - enum -> ENUM(column, allowed_values)
+def _decompose_multi_table_schema(
+        payload: Dict[str, Any], source_db: str
+    ) -> List[RuleSchema]:
+    """Decompose multi-table schema JSON payload into atomic RuleSchema objects.
+    
+    Supports both single-table and multi-table formats.
     """
-    rules_arr = payload.get("rules", [])
+    all_atomic_rules: List[RuleSchema] = []
+    
+    # Check if this is multi-table format
+    table_names = [key for key in payload.keys() if key != "rules"]
+    
+    if table_names:
+        # Multi-table format
+        for table_name in table_names:
+            table_schema = payload[table_name]
+            table_rules = _decompose_single_table_schema(
+                table_schema, source_db, table_name
+            )
+            all_atomic_rules.extend(table_rules)
+    else:
+        # Single-table format (backward compatibility)
+        # For single-table, we need to determine the table name from the source
+        # This will be handled by the caller who knows the table context
+        table_rules = _decompose_single_table_schema(payload, source_db, "unknown")
+        all_atomic_rules.extend(table_rules)
+    
+    return all_atomic_rules
+
+
+def _decompose_multi_table_schema_with_source_info(
+        payload: Dict[str, Any], source_config: ConnectionSchema
+    ) -> List[RuleSchema]:
+    """Decompose multi-table schema JSON payload into atomic RuleSchema objects.
+    
+    This version takes into account the actual tables available in the source.
+    
+    Args:
+        payload: The rules payload
+        source_config: Source configuration with table information
+    """
+    all_atomic_rules: List[RuleSchema] = []
+    
+    # Check if this is multi-table format
+    table_names = [key for key in payload.keys() if key != "rules"]
+    
+    if table_names:
+        # Multi-table format
+        # Check if source has multi-table information
+        is_multi_table_source = source_config.parameters.get("is_multi_table", False)
+        available_tables = (source_config.parameters
+                            .get("sheets", {}).keys() 
+                            if is_multi_table_source else set()
+        )
+        if is_multi_table_source and available_tables:
+            # Only process rules for tables that actually exist in the source
+            for table_name in table_names:
+                if table_name in available_tables:
+                    table_schema = payload[table_name]
+                    table_rules = _decompose_single_table_schema(
+                        table_schema, source_config.db_name or "unknown", table_name
+                    )
+                    all_atomic_rules.extend(table_rules)
+                    logger.info(
+                        f"Processing rules for table '{table_name}' (found in source)"
+                    )
+                else:
+                    logger.warning(
+                        f"Skipping rules for table '{table_name}' "
+                        f"(not found in source: {list(available_tables)})"
+                    )
+        else:
+            # Process all tables (fallback for non-multi-table sources)
+            for table_name in table_names:
+                table_schema = payload[table_name]
+                table_rules = _decompose_single_table_schema(
+                    table_schema, source_config.db_name or "unknown", table_name
+                )
+                all_atomic_rules.extend(table_rules)
+    else:
+        # Single-table format (backward compatibility)
+        # For single-table, we need to determine the table name from the source
+        # This will be handled by the caller who knows the table context
+        table_rules = _decompose_single_table_schema(
+            payload, source_config.db_name or "unknown", "unknown"
+        )
+        all_atomic_rules.extend(table_rules)
+    
+    return all_atomic_rules
+
+
+def _decompose_single_table_schema(
+        table_schema: Dict[str, Any], source_db: str, table_name: str
+    ) -> List[RuleSchema]:
+    """Decompose a single table's schema definition into atomic RuleSchema objects.
+    
+    Args:
+        table_schema: The schema definition for a single table
+        source_db: Database name from source
+        table_name: Name of the table being validated
+    """
+    rules_arr = table_schema.get("rules", [])
 
     # Build SCHEMA columns mapping first
     columns_map: Dict[str, Dict[str, Any]] = {}
@@ -275,11 +399,11 @@ def _decompose_to_atomic_rules(payload: Dict[str, Any]) -> List[RuleSchema]:
     # Create one table-level SCHEMA rule if any columns were declared
     if columns_map:
         schema_params: Dict[str, Any] = {"columns": columns_map}
-        # Optional switches at top-level
-        if isinstance(payload.get("strict_mode"), bool):
-            schema_params["strict_mode"] = payload["strict_mode"]
-        if isinstance(payload.get("case_insensitive"), bool):
-            schema_params["case_insensitive"] = payload["case_insensitive"]
+        # Optional switches at table level
+        if isinstance(table_schema.get("strict_mode"), bool):
+            schema_params["strict_mode"] = table_schema["strict_mode"]
+        if isinstance(table_schema.get("case_insensitive"), bool):
+            schema_params["case_insensitive"] = table_schema["case_insensitive"]
 
         atomic_rules.insert(
             0,
@@ -288,11 +412,28 @@ def _decompose_to_atomic_rules(payload: Dict[str, Any]) -> List[RuleSchema]:
                 rule_type=RuleType.SCHEMA,
                 column=None,
                 parameters=schema_params,
-                description="CLI: table schema existence+type",
+                description=f"CLI: table schema existence+type for {table_name}",
             ),
         )
 
+    # Set the target table and database for all rules
+    for rule in atomic_rules:
+        if rule.target and rule.target.entities:
+            rule.target.entities[0].database = source_db
+            rule.target.entities[0].table = table_name
+
     return atomic_rules
+
+
+def _decompose_to_atomic_rules(payload: Dict[str, Any]) -> List[RuleSchema]:
+    """Decompose schema JSON payload into atomic RuleSchema objects.
+    
+    This function is kept for backward compatibility but now delegates to
+    the new multi-table aware function.
+    """
+    # For backward compatibility, we need to determine the source_db
+    # This will be handled by the caller
+    return _decompose_multi_table_schema(payload, "unknown")
 
 
 def _build_prioritized_atomic_status(
@@ -531,6 +672,7 @@ def _emit_json_output(
             col_name = str(item.get("column"))
             entry: Dict[str, Any] = {
                 "column": col_name,
+                "table": "unknown",  # Will be updated later with actual table name
                 "checks": {
                     "existence": {
                         "status": item.get("existence", "UNKNOWN"),
@@ -555,6 +697,7 @@ def _emit_json_output(
             if str(col) not in schema_fields_index:
                 entry = {
                     "column": str(col),
+                    "table": "unknown",  # Will be updated later with actual table name
                     "checks": {
                         "existence": {"status": "UNKNOWN", "failure_code": "NONE"},
                         "type": {"status": "UNKNOWN", "failure_code": "NONE"},
@@ -583,11 +726,19 @@ def _emit_json_output(
         column_name = rule.get_target_column() or ""
         if not column_name:
             continue
+        # Add table name for multi-table support
+        table_name = "unknown"
+        if rule.target and rule.target.entities:
+            table_name = rule.target.entities[0].table
+        
         l_entry = schema_fields_index.get(column_name)
         if not l_entry:
-            l_entry = {"column": column_name, "checks": {}}
+            l_entry = {"column": column_name, "table": table_name, "checks": {}}
             fields.append(l_entry)
             schema_fields_index[column_name] = l_entry
+        else:
+            # Ensure table name is set
+            l_entry["table"] = table_name
         t = rule.type
         if t == RuleType.NOT_NULL:
             key = "not_null"
@@ -699,6 +850,9 @@ def _emit_table_output(
             rd["rule_type"] = rule.type.value
             rd["column_name"] = rule.get_target_column()
             rd.setdefault("rule_name", rule.name)
+            # Add table name for multi-table support
+            if rule.target and rule.target.entities:
+                rd["table_name"] = rule.target.entities[0].table
         if rid in skip_map:
             rd["status"] = skip_map[rid]["status"]
             rd["skip_reason"] = skip_map[rid]["skip_reason"]
@@ -735,56 +889,42 @@ def _emit_table_output(
             col = str(item.get("column"))
             column_guard[col] = str(item.get("failure_code", "NONE"))
 
-    grouped: Dict[str, Dict[str, Any]] = {}
-    schema_rule = next((r for r in atomic_rules if r.type == RuleType.SCHEMA), None)
-    declared_cols: List[str] = []
-    if schema_rule:
-        params = schema_rule.parameters or {}
-        declared_cols = list((params.get("columns") or {}).keys())
-        for col in declared_cols:
-            grouped[str(col)] = {"column": str(col), "issues": []}
-
+    # Group results by table for multi-table support
+    tables_grouped: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    
     for rd in table_results:
-        rid = str(rd.get("rule_id", ""))
-        rule = rule_map.get(rid)
-        if not rule or rule.type == RuleType.SCHEMA:
-            continue
-        col = rule.get_target_column() or ""
-        if not col:
-            continue
-        entry = grouped.setdefault(col, {"column": col, "issues": []})
-        status = str(rd.get("status", "UNKNOWN"))
-        if rule.type == RuleType.NOT_NULL:
-            key = "not_null"
-        elif rule.type == RuleType.RANGE:
-            key = "range"
-        elif rule.type == RuleType.ENUM:
-            key = "enum"
-        elif rule.type == RuleType.REGEX:
-            key = "regex"
-        elif rule.type == RuleType.DATE_FORMAT:
-            key = "date_format"
-        else:
-            key = rule.type.value.lower()
-        if column_guard.get(col) == "FIELD_MISSING":
-            continue
-        if column_guard.get(col) == "TYPE_MISMATCH" and key in {
-            "not_null",
-            "range",
-            "enum",
-            "regex",
-            "date_format",
-        }:
-            continue
-        if status in {"FAILED", "ERROR", "SKIPPED"}:
-            entry["issues"].append(
-                {
-                    "check": key,
-                    "status": status,
-                    "failed_records": int(rd.get("failed_records", 0) or 0),
-                    "skip_reason": skip_map.get(rid, {}).get("skip_reason"),
-                }
-            )
+        table_name = rd.get("table_name", "unknown")
+        if table_name not in tables_grouped:
+            tables_grouped[table_name] = {}
+        
+        col = rd.get("column_name", "")
+        if col:
+            if col not in tables_grouped[table_name]:
+                tables_grouped[table_name][col] = {"column": col, "issues": []}
+            
+            status = str(rd.get("status", "UNKNOWN"))
+            if rd.get("rule_type") == RuleType.NOT_NULL.value:
+                key = "not_null"
+            elif rd.get("rule_type") == RuleType.RANGE.value:
+                key = "range"
+            elif rd.get("rule_type") == RuleType.ENUM.value:
+                key = "enum"
+            elif rd.get("rule_type") == RuleType.REGEX.value:
+                key = "regex"
+            elif rd.get("rule_type") == RuleType.DATE_FORMAT.value:
+                key = "date_format"
+            else:
+                key = rd.get("rule_type", "unknown").lower()
+            
+            if status in {"FAILED", "ERROR", "SKIPPED"}:
+                tables_grouped[table_name][col]["issues"].append(
+                    {
+                        "check": key,
+                        "status": status,
+                        "failed_records": int(rd.get("failed_records", 0) or 0),
+                        "skip_reason": rd.get("skip_reason"),
+                    }
+                )
 
     lines: List[str] = []
     lines.append(f"✓ Checking {source} ({header_total_records:,} records)")
@@ -793,34 +933,29 @@ def _emit_table_output(
         int(r.get("failed_records", 0) or 0) for r in table_results
     )
 
-    for col in sorted(grouped.keys()):
-        guard = column_guard.get(col, "NONE")
-        if guard == "FIELD_MISSING":
-            lines.append(f"✗ {col}: missing (skipped dependent checks)")
-            continue
-        if guard == "TYPE_MISMATCH":
-            lines.append(f"✗ {col}: type mismatch (skipped dependent checks)")
-            continue
-        issues = grouped[col]["issues"]
-        critical = [i for i in issues if i["status"] in {"FAILED", "ERROR"}]
-        if not critical:
-            lines.append(f"✓ {col}: OK")
-        else:
-            for i in critical:
-                fr = i.get("failed_records") or 0
-                if i["status"] == "ERROR":
-                    lines.append(f"✗ {col}: {i['check']} error")
-                else:
-                    lines.append(f"✗ {col}: {i['check']} failed ({fr} failures)")
+    # Display results grouped by table
+    for table_name in sorted(tables_grouped.keys()):
+        if len(tables_grouped) > 1:  # Only show table header for multi-table
+            lines.append(f"\n📋 Table: {table_name}")
+        
+        table_grouped = tables_grouped[table_name]
+        for col in sorted(table_grouped.keys()):
+            issues = table_grouped[col]["issues"]
+            critical = [i for i in issues if i["status"] in {"FAILED", "ERROR"}]
+            if not critical:
+                lines.append(f"✓ {col}: OK")
+            else:
+                for i in critical:
+                    fr = i.get("failed_records") or 0
+                    if i["status"] == "ERROR":
+                        lines.append(f"✗ {col}: {i['check']} error")
+                    else:
+                        lines.append(f"✗ {col}: {i['check']} failed ({fr} failures)")
 
-    total_columns = len(grouped)
+    total_columns = sum(len(tables_grouped[table]) for table in tables_grouped)
     passed_columns = sum(
-        1
-        for col in grouped
-        if column_guard.get(col, "NONE") == "NONE"
-        and not [
-            i for i in grouped[col]["issues"] if i["status"] in {"FAILED", "ERROR"}
-        ]
+        sum(1 for col in table_grouped.values() if not col["issues"])
+        for table_grouped in tables_grouped.values()
     )
     failed_columns = total_columns - passed_columns
     overall_error_rate = (
@@ -828,6 +963,15 @@ def _emit_table_output(
         if header_total_records == 0
         else (total_failed_records / max(header_total_records, 1)) * 100
     )
+    
+    if len(tables_grouped) > 1:
+        lines.append(f"\n📊 Multi-table Summary:")
+        for table_name in sorted(tables_grouped.keys()):
+            table_columns = len(tables_grouped[table_name])
+            table_passed = sum(1 for col in tables_grouped[table_name].values() if not col["issues"])
+            table_failed = table_columns - table_passed
+            lines.append(f"  {table_name}: {table_passed} passed, {table_failed} failed")
+    
     lines.append(
         f"\nSummary: {passed_columns} passed, {failed_columns} failed"
         f" ({overall_error_rate:.2f}% overall error rate)"
@@ -844,13 +988,12 @@ def _emit_table_output(
     required=True,
     help="Database connection string or file path",
 )
-@click.option("--table", "table_name", required=True, help="Table name to validate")
 @click.option(
     "--rules",
     "rules_file",
     type=click.Path(exists=True, readable=True),
     required=True,
-    help="Path to schema rules file (JSON)",
+    help="Path to schema rules file (JSON) - supports both single-table and multi-table formats",
 )
 @click.option(
     "--output",
@@ -875,28 +1018,29 @@ def _emit_table_output(
 @click.option("--verbose", is_flag=True, default=False, help="Enable verbose output")
 def schema_command(
     connection_string: str,
-    table_name: str,
     rules_file: str,
     output: str,
     fail_on_error: bool,
     max_errors: int,
     verbose: bool,
 ) -> None:
-    """Schema validation command with minimal rules file validation.
+    """Schema validation command with support for both single-table and multi-table validation.
 
     NEW FORMAT:
-        vlite-cli schema --conn <connection> --table <table_name> \
-            --rules <rules_file> [options]
+        vlite-cli schema --conn <connection> --rules <rules_file> [options]
 
     SOURCE can be:
     - File path: users.csv, data.xlsx, records.json
     - Database URL: mysql://user:pass@host/db
     - SQLite file: sqlite:///path/to/file.db
 
+    RULES FILE FORMATS:
+    - Single-table: {"rules": [...]}
+    - Multi-table: {"table1": {"rules": [...]}, "table2": {"rules": [...]}}
+
     Examples:
-        vlite-cli schema --conn users.csv --table users --rules schema.json
-        vlite-cli schema --conn mysql://user:pass@host/db --table users \
-            --rules schema.json
+        vlite-cli schema --conn users.csv --rules schema.json
+        vlite-cli schema --conn mysql://user:pass@host/db --rules multi_table_schema.json
     """
 
     from cli.core.config import get_cli_config
@@ -914,27 +1058,14 @@ def schema_command(
         warnings, rules_count = _validate_rules_payload(rules_payload)
         _emit_warnings(warnings)
 
-        # Decompose into atomic rules per design
-        atomic_rules = _decompose_to_atomic_rules(rules_payload)
-
-        # FIX: Manually populate the target table and database from CLI args
-        # The source_config object is a class instance, not a dict.
-        # Use attribute access.
+        # Get database name from source config
         source_db = source_config.db_name
         if not source_db:
             source_db = "unknown"
 
-        for rule in atomic_rules:
-            if rule.target and rule.target.entities:
-                rule.target.entities[0].database = source_db
-                rule.target.entities[0].table = table_name
+        # Decompose into atomic rules using new multi-table aware function
+        atomic_rules = _decompose_multi_table_schema_with_source_info(rules_payload, source_config)
 
-        # get database name from SourceParser results
-        # source_db = source_config.get('database')
-        # for rule in atomic_rules:
-        #     if rule.target and rule.target.entities:
-        #         rule.target.entities[0].database = source_db
-        #         rule.target.entities[0].table = table_name
         # Fast-path: no rules -> emit minimal payload and exit cleanly
         if len(atomic_rules) == 0:
             _early_exit_when_no_rules(

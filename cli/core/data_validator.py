@@ -184,15 +184,26 @@ class DataValidator:
         """Validate file-based data source"""
         self.logger.info(f"Validating file: {self.source_config.file_path}")
 
-        # Load file data
-        try:
-            df = self._load_file_data()
-            self.logger.info(f"Loaded {len(df)} records from file")
-        except Exception as e:
-            raise ValueError(f"Failed to load file data: {str(e)}")
+        # Check if this is a multi-table Excel file
+        is_multi_table = self.source_config.parameters.get("is_multi_table", False)
+        self.logger.info(f"Multi-table detection: is_multi_table={is_multi_table}, connection_type={self.source_config.connection_type}")
+        self.logger.info(f"Source config parameters: {self.source_config.parameters}")
+        
+        if is_multi_table and self.source_config.connection_type == ConnectionType.EXCEL:
+            # Handle multi-table Excel file
+            self.logger.info("Processing multi-table Excel file")
+            sqlite_config = await self._convert_multi_table_excel_to_sqlite()
+        else:
+            # Handle single-table file (existing logic)
+            self.logger.info("Processing single-table file")
+            try:
+                df = self._load_file_data()
+                self.logger.info(f"Loaded {len(df)} records from file")
+            except Exception as e:
+                raise ValueError(f"Failed to load file data: {str(e)}")
 
-        # Convert to SQLite for rule engine processing
-        sqlite_config = await self._convert_file_to_sqlite(df)
+            # Convert to SQLite for rule engine processing
+            sqlite_config = await self._convert_file_to_sqlite(df)
 
         # Execute rules using rule engine with new interface
         rule_engine = RuleEngine(connection=sqlite_config, core_config=self.core_config)
@@ -309,6 +320,128 @@ class DataValidator:
 
         except Exception as e:
             raise ValueError(f"Failed to parse file: {str(e)}")
+
+    async def _convert_multi_table_excel_to_sqlite(self) -> ConnectionSchema:
+        """
+        Convert multi-table Excel file to SQLite database.
+        
+        Returns:
+            ConnectionSchema: SQLite connection configuration
+        """
+        import os
+        import tempfile
+        import time
+        
+        from sqlalchemy import create_engine
+        
+        temp_db_file = None
+        temp_db_path = None
+        start_time = time.time()
+        
+        try:
+            # Create a temporary SQLite file
+            temp_db_file = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+            temp_db_path = temp_db_file.name
+            temp_db_file.close()
+            
+            # Create SQLite engine
+            engine = create_engine(f"sqlite:///{temp_db_path}")
+            
+            # Load all sheets into SQLite
+            await self._load_multi_table_excel_to_sqlite(engine, temp_db_path)
+            
+            # Get table mapping for connection config
+            table_mapping = self.source_config.parameters.get("table_mapping", {})
+            
+            # Create connection config with multi-table information
+            sqlite_config = ConnectionSchema(
+                name=f"temp_sqlite_multi_table",
+                description="Temporary SQLite for multi-table Excel validation",
+                connection_type=ConnectionType.SQLITE,
+                file_path=temp_db_path,
+                parameters={
+                    "is_multi_table": True,
+                    "table_mapping": table_mapping,
+                    "temp_file": True,  # Mark as temporary file for cleanup
+                },
+            )
+            
+            # Log performance metrics
+            elapsed_time = time.time() - start_time
+            self.logger.info(
+                f"Created temporary SQLite database at {temp_db_path} with "
+                f"{len(table_mapping)} tables in {elapsed_time:.2f} seconds"
+            )
+            
+            return sqlite_config
+            
+        except Exception as e:
+            # Clean up temporary file if it exists
+            if temp_db_path and os.path.exists(temp_db_path):
+                try:
+                    os.unlink(temp_db_path)
+                except Exception as cleanup_error:
+                    self.logger.warning(
+                        f"Failed to cleanup temporary file {temp_db_path}: {cleanup_error}"
+                    )
+            raise ValueError(f"Failed to create multi-table SQLite database: {str(e)}")
+
+    async def _load_multi_table_excel_to_sqlite(self, engine, temp_db_path: str) -> None:
+        """
+        Load multiple sheets from Excel file into SQLite database.
+        
+        Args:
+            engine: SQLAlchemy engine for SQLite
+            temp_db_path: Path to temporary SQLite database
+        """
+        import pandas as pd
+        
+        file_path = self.source_config.file_path
+        sheets_info = self.source_config.parameters.get("sheets", {})
+        
+        if not sheets_info:
+            raise ValueError("Multi-table Excel file but no sheets information available")
+        
+        self.logger.info(f"Loading {len(sheets_info)} sheets into SQLite: {list(sheets_info.keys())}")
+        
+        # Store table name mapping for later use
+        table_mapping = {}
+        
+        # Load each sheet into a separate table
+        for sheet_name, columns in sheets_info.items():
+            try:
+                # Read the specific sheet
+                df = pd.read_excel(file_path, sheet_name=sheet_name, engine="openpyxl")
+                
+                # Validate that the sheet has the expected columns
+                expected_columns = set(columns)
+                actual_columns = set(df.columns)
+                
+                if not expected_columns.issubset(actual_columns):
+                    missing_columns = expected_columns - actual_columns
+                    self.logger.warning(f"Sheet '{sheet_name}' missing expected columns: {missing_columns}")
+                
+                # Write to SQLite with sheet name as table name
+                # Clean table name for SQLite (remove special characters)
+                clean_table_name = "".join(c for c in sheet_name if c.isalnum() or c == '_')
+                if not clean_table_name or clean_table_name[0].isdigit():
+                    clean_table_name = f"sheet_{clean_table_name}"
+                
+                # Store the mapping from original sheet name to clean table name
+                table_mapping[sheet_name] = clean_table_name
+                
+                df.to_sql(clean_table_name, engine, if_exists="replace", index=False)
+                self.logger.info(f"Loaded sheet '{sheet_name}' as table '{clean_table_name}' with {len(df)} rows")
+                
+            except Exception as e:
+                self.logger.error(f"Failed to load sheet '{sheet_name}': {str(e)}")
+                # Continue with other sheets
+                continue
+        
+        # Store the table mapping in the source config for later use
+        if hasattr(self, 'source_config') and hasattr(self.source_config, 'parameters'):
+            self.source_config.parameters['table_mapping'] = table_mapping
+            self.logger.info(f"Stored table mapping: {table_mapping}")
 
     async def _convert_file_to_sqlite(self, df: pd.DataFrame) -> ConnectionSchema:
         """
