@@ -315,11 +315,10 @@ def _build_prioritized_atomic_status(
     # Build per-column guard from SCHEMA details
     column_guard: Dict[str, str] = {}  # column -> NONE|FIELD_MISSING|TYPE_MISMATCH
     if schema_result:
-        details = (
-            schema_result.get("execution_plan", {})
-            .get("schema_details", {})
-            .get("field_results", [])
-        )
+        # Safely access nested dictionaries, checking for None at each level.
+        execution_plan = schema_result.get("execution_plan") or {}
+        schema_details = execution_plan.get("schema_details") or {}
+        details = schema_details.get("field_results") or []
         for item in details:
             col = str(item.get("column"))
             code = str(item.get("failure_code", "NONE"))
@@ -417,15 +416,22 @@ def _create_validator(
             core_config=core_config,
             cli_config=cli_config,
         )
-    except TypeError:
-        return DataValidator()  # type: ignore[call-arg]
+    except Exception as e:
+        logger.error(f"Failed to create DataValidator: {str(e)}")
+        raise click.UsageError(f"Failed to create validator: {str(e)}")
 
 
 def _run_validation(validator: Any) -> Tuple[List[Any], float]:
     import asyncio
 
     start = _now()
-    results = asyncio.run(validator.validate())
+    logger.debug("Starting validation")
+    try:
+        results = asyncio.run(validator.validate())
+        logger.debug(f"Validation returned {len(results)} results")
+    except Exception as e:
+        logger.error(f"Validation failed: {str(e)}")
+        raise
     exec_seconds = (_now() - start).total_seconds()
     return results, exec_seconds
 
@@ -440,6 +446,8 @@ def _extract_schema_result_dict(
         if not schema_rule:
             return None
         for r in results:
+            if r is None:
+                continue
             rid = ""
             if hasattr(r, "rule_id"):
                 try:
@@ -618,11 +626,11 @@ def _emit_json_output(
     if schema_result_dict:
         try:
             extras = (
-                (schema_result_dict.get("execution_plan") or {}).get(
-                    "schema_details", {}
-                )
-                or {}
-            ).get("extras", [])
+                (schema_result_dict or {})
+                .get("execution_plan", {})
+                .get("schema_details", {})
+                .get("extras", [])
+            )
             if isinstance(extras, list):
                 schema_extras = [str(x) for x in extras]
         except Exception:
@@ -720,11 +728,9 @@ def _emit_table_output(
 
     column_guard: Dict[str, str] = {}
     if schema_result_dict:
-        details = (
-            schema_result_dict.get("execution_plan", {})
-            .get("schema_details", {})
-            .get("field_results", [])
-        )
+        execution_plan = schema_result_dict.get("execution_plan") or {}
+        schema_details = execution_plan.get("schema_details") or {}
+        details = schema_details.get("field_results") or []
         for item in details:
             col = str(item.get("column"))
             column_guard[col] = str(item.get("failure_code", "NONE"))
@@ -832,7 +838,13 @@ def _emit_table_output(
 
 
 @click.command("schema")
-@click.argument("source", required=True)
+@click.option(
+    "--conn",
+    "connection_string",
+    required=True,
+    help="Database connection string or file path",
+)
+@click.option("--table", "table_name", required=True, help="Table name to validate")
 @click.option(
     "--rules",
     "rules_file",
@@ -862,7 +874,8 @@ def _emit_table_output(
 )
 @click.option("--verbose", is_flag=True, default=False, help="Enable verbose output")
 def schema_command(
-    source: str,
+    connection_string: str,
+    table_name: str,
     rules_file: str,
     output: str,
     fail_on_error: bool,
@@ -871,7 +884,19 @@ def schema_command(
 ) -> None:
     """Schema validation command with minimal rules file validation.
 
-    Decomposition and execution are added in subsequent tasks.
+    NEW FORMAT:
+        vlite-cli schema --conn <connection> --table <table_name> \
+            --rules <rules_file> [options]
+
+    SOURCE can be:
+    - File path: users.csv, data.xlsx, records.json
+    - Database URL: mysql://user:pass@host/db
+    - SQLite file: sqlite:///path/to/file.db
+
+    Examples:
+        vlite-cli schema --conn users.csv --table users --rules schema.json
+        vlite-cli schema --conn mysql://user:pass@host/db --table users \
+            --rules schema.json
     """
 
     from cli.core.config import get_cli_config
@@ -879,10 +904,10 @@ def schema_command(
 
     # start_time = now()
     try:
-        _maybe_echo_analyzing(source, output)
-        _guard_empty_source_file(source)
+        _maybe_echo_analyzing(connection_string, output)
+        _guard_empty_source_file(connection_string)
 
-        source_config = SourceParser().parse_source(source)
+        source_config = SourceParser().parse_source(connection_string)
 
         rules_payload = _read_rules_payload(rules_file)
 
@@ -892,10 +917,28 @@ def schema_command(
         # Decompose into atomic rules per design
         atomic_rules = _decompose_to_atomic_rules(rules_payload)
 
-        # Fast-path: no rules → emit minimal payload and exit cleanly
+        # FIX: Manually populate the target table and database from CLI args
+        # The source_config object is a class instance, not a dict.
+        # Use attribute access.
+        source_db = source_config.db_name
+        if not source_db:
+            source_db = "unknown"
+
+        for rule in atomic_rules:
+            if rule.target and rule.target.entities:
+                rule.target.entities[0].database = source_db
+                rule.target.entities[0].table = table_name
+
+        # get database name from SourceParser results
+        # source_db = source_config.get('database')
+        # for rule in atomic_rules:
+        #     if rule.target and rule.target.entities:
+        #         rule.target.entities[0].database = source_db
+        #         rule.target.entities[0].table = table_name
+        # Fast-path: no rules -> emit minimal payload and exit cleanly
         if len(atomic_rules) == 0:
             _early_exit_when_no_rules(
-                source=source,
+                source=connection_string,
                 rules_file=rules_file,
                 output=output,
                 fail_on_error=fail_on_error,
@@ -923,7 +966,7 @@ def schema_command(
         # Apply skip map to JSON output only; table mode stays concise by design
         if output.lower() == "json":
             _emit_json_output(
-                source=source,
+                source=connection_string,
                 rules_file=rules_file,
                 atomic_rules=atomic_rules,
                 results=results,
@@ -933,7 +976,7 @@ def schema_command(
             )
         else:
             _emit_table_output(
-                source=source,
+                source=connection_string,
                 atomic_rules=atomic_rules,
                 results=results,
                 skip_map=skip_map,
