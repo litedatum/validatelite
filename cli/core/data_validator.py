@@ -111,6 +111,11 @@ class DataValidator:
 
         This replaces the old _update_rule_connections method.
         """
+        # If the source is multi-table, targets are already set. Do not overwrite.
+        if self.source_config.parameters.get("is_multi_table"):
+            self.logger.debug("Multi-table source detected, skipping target info completion.")
+            return
+
         if not self.rules:
             return
 

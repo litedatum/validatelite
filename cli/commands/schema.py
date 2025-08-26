@@ -232,94 +232,54 @@ def _create_rule_schema(
     )
 
 
-def _decompose_multi_table_schema(
-        payload: Dict[str, Any], source_db: str
+def _decompose_schema_payload(
+        payload: Dict[str, Any], source_config: ConnectionSchema
     ) -> List[RuleSchema]:
-    """Decompose multi-table schema JSON payload into atomic RuleSchema objects.
-    
-    Supports both single-table and multi-table formats.
+    """Decompose a schema payload into atomic RuleSchema objects.
+
+    This function handles both single-table and multi-table formats in a
+    source-agnostic way.
     """
     all_atomic_rules: List[RuleSchema] = []
-    
-    # Check if this is multi-table format
-    table_names = [key for key in payload.keys() if key != "rules"]
-    
-    if table_names:
-        # Multi-table format
-        for table_name in table_names:
+    source_db = source_config.db_name or "unknown"
+
+    is_multi_table_format = "rules" not in payload
+
+    if is_multi_table_format:
+        tables_in_rules = list(payload.keys())
+        available_tables_from_source = set(source_config.available_tables or [])
+
+        for table_name in tables_in_rules:
+            if available_tables_from_source and table_name not in available_tables_from_source:
+                logger.warning(
+                    f"Skipping rules for table '{table_name}' as it is not available in the source."
+                )
+                continue
+
             table_schema = payload[table_name]
+            if not isinstance(table_schema, dict):
+                logger.warning(f"Definition for table '{table_name}' is not a valid object, skipping.")
+                continue
+
             table_rules = _decompose_single_table_schema(
                 table_schema, source_db, table_name
             )
             all_atomic_rules.extend(table_rules)
     else:
-        # Single-table format (backward compatibility)
-        # For single-table, we need to determine the table name from the source
-        # This will be handled by the caller who knows the table context
-        table_rules = _decompose_single_table_schema(payload, source_db, "unknown")
-        all_atomic_rules.extend(table_rules)
-    
-    return all_atomic_rules
-
-
-def _decompose_multi_table_schema_with_source_info(
-        payload: Dict[str, Any], source_config: ConnectionSchema
-    ) -> List[RuleSchema]:
-    """Decompose multi-table schema JSON payload into atomic RuleSchema objects.
-    
-    This version takes into account the actual tables available in the source.
-    
-    Args:
-        payload: The rules payload
-        source_config: Source configuration with table information
-    """
-    all_atomic_rules: List[RuleSchema] = []
-    
-    # Check if this is multi-table format
-    table_names = [key for key in payload.keys() if key != "rules"]
-    
-    if table_names:
-        # Multi-table format
-        # Check if source has multi-table information
-        is_multi_table_source = source_config.parameters.get("is_multi_table", False)
-        available_tables = (source_config.parameters
-                            .get("sheets", {}).keys() 
-                            if is_multi_table_source else set()
-        )
-        if is_multi_table_source and available_tables:
-            # Only process rules for tables that actually exist in the source
-            for table_name in table_names:
-                if table_name in available_tables:
-                    table_schema = payload[table_name]
-                    table_rules = _decompose_single_table_schema(
-                        table_schema, source_config.db_name or "unknown", table_name
-                    )
-                    all_atomic_rules.extend(table_rules)
-                    logger.info(
-                        f"Processing rules for table '{table_name}' (found in source)"
-                    )
-                else:
-                    logger.warning(
-                        f"Skipping rules for table '{table_name}' "
-                        f"(not found in source: {list(available_tables)})"
-                    )
+        table_name = "unknown"
+        if source_config.available_tables:
+            table_name = source_config.available_tables[0]
         else:
-            # Process all tables (fallback for non-multi-table sources)
-            for table_name in table_names:
-                table_schema = payload[table_name]
-                table_rules = _decompose_single_table_schema(
-                    table_schema, source_config.db_name or "unknown", table_name
-                )
-                all_atomic_rules.extend(table_rules)
-    else:
-        # Single-table format (backward compatibility)
-        # For single-table, we need to determine the table name from the source
-        # This will be handled by the caller who knows the table context
+            logger.warning(
+                "Could not determine table name for single-table schema. "
+                "Consider using multi-table format for database sources."
+            )
+        
         table_rules = _decompose_single_table_schema(
-            payload, source_config.db_name or "unknown", "unknown"
+            payload, source_db, table_name
         )
         all_atomic_rules.extend(table_rules)
-    
+
     return all_atomic_rules
 
 
@@ -425,15 +385,15 @@ def _decompose_single_table_schema(
     return atomic_rules
 
 
-def _decompose_to_atomic_rules(payload: Dict[str, Any]) -> List[RuleSchema]:
-    """Decompose schema JSON payload into atomic RuleSchema objects.
+# def _decompose_to_atomic_rules(payload: Dict[str, Any]) -> List[RuleSchema]:
+#     """Decompose schema JSON payload into atomic RuleSchema objects.
     
-    This function is kept for backward compatibility but now delegates to
-    the new multi-table aware function.
-    """
-    # For backward compatibility, we need to determine the source_db
-    # This will be handled by the caller
-    return _decompose_multi_table_schema(payload, "unknown")
+#     This function is kept for backward compatibility but now delegates to
+#     the new multi-table aware function.
+#     """
+#     # For backward compatibility, we need to determine the source_db
+#     # This will be handled by the caller
+#     return _decompose_multi_table_schema(payload, "unknown")
 
 
 def _build_prioritized_atomic_status(
@@ -1006,14 +966,7 @@ def _emit_table_output(
     "--fail-on-error",
     is_flag=True,
     default=False,
-    help="Return exit code 1 if any error occurs during skeleton execution",
-)
-@click.option(
-    "--max-errors",
-    type=int,
-    default=100,
-    show_default=True,
-    help="Maximum number of errors to collect (reserved; not used in skeleton)",
+    help="Return exit code 1 if any error occurs during execution",
 )
 @click.option("--verbose", is_flag=True, default=False, help="Enable verbose output")
 def schema_command(
@@ -1021,61 +974,40 @@ def schema_command(
     rules_file: str,
     output: str,
     fail_on_error: bool,
-    max_errors: int,
     verbose: bool,
 ) -> None:
-    """Schema validation command with support for both single-table and multi-table validation.
-
-    NEW FORMAT:
-        vlite-cli schema --conn <connection> --rules <rules_file> [options]
-
-    SOURCE can be:
-    - File path: users.csv, data.xlsx, records.json
-    - Database URL: mysql://user:pass@host/db
-    - SQLite file: sqlite:///path/to/file.db
-
-    RULES FILE FORMATS:
-    - Single-table: {"rules": [...]}
-    - Multi-table: {"table1": {"rules": [...]}, "table2": {"rules": [...]}}
-
-    Examples:
-        vlite-cli schema --conn users.csv --rules schema.json
-        vlite-cli schema --conn mysql://user:pass@host/db --rules multi_table_schema.json
-    """
+    """Schema validation command with support for both single-table and multi-table validation."""
 
     from cli.core.config import get_cli_config
     from core.config import get_core_config
 
-    # start_time = now()
     try:
         _maybe_echo_analyzing(connection_string, output)
         _guard_empty_source_file(connection_string)
 
         source_config = SourceParser().parse_source(connection_string)
-
         rules_payload = _read_rules_payload(rules_file)
+
+        # If the rules file uses a multi-table format, signal this to the DataValidator
+        # so that it skips its single-table target completion logic.
+        is_multi_table_rules = "rules" not in rules_payload
+        if is_multi_table_rules:
+            source_config.parameters["is_multi_table"] = True
 
         warnings, rules_count = _validate_rules_payload(rules_payload)
         _emit_warnings(warnings)
 
-        # Get database name from source config
-        source_db = source_config.db_name
-        if not source_db:
-            source_db = "unknown"
+        atomic_rules = _decompose_schema_payload(rules_payload, source_config)
 
-        # Decompose into atomic rules using new multi-table aware function
-        atomic_rules = _decompose_multi_table_schema_with_source_info(rules_payload, source_config)
-
-        # Fast-path: no rules -> emit minimal payload and exit cleanly
-        if len(atomic_rules) == 0:
+        if not atomic_rules:
             _early_exit_when_no_rules(
                 source=connection_string,
                 rules_file=rules_file,
                 output=output,
                 fail_on_error=fail_on_error,
             )
+            return
 
-        # Execute via core engine using DataValidator
         core_config = get_core_config()
         cli_config = get_cli_config()
         validator = _create_validator(
@@ -1086,7 +1018,6 @@ def schema_command(
         )
         results, exec_seconds = _run_validation(validator)
 
-        # Aggregation and prioritization
         schema_result_dict: Dict[str, Any] | None = _extract_schema_result_dict(
             atomic_rules=atomic_rules, results=results
         )
@@ -1094,7 +1025,6 @@ def schema_command(
             atomic_rules=atomic_rules, schema_result_dict=schema_result_dict
         )
 
-        # Apply skip map to JSON output only; table mode stays concise by design
         if output.lower() == "json":
             _emit_json_output(
                 source=connection_string,
@@ -1115,7 +1045,6 @@ def schema_command(
                 exec_seconds=exec_seconds,
             )
 
-        # Exit code: fail if any rule failed (support both model objects and dicts)
         def _status_of(item: Any) -> str:
             if hasattr(item, "status"):
                 try:
@@ -1127,19 +1056,13 @@ def schema_command(
             return ""
 
         any_failed = any(_status_of(r) == "FAILED" for r in results)
-        import click as _click
-
-        raise _click.exceptions.Exit(1 if any_failed or fail_on_error else 0)
+        raise click.exceptions.Exit(1 if any_failed or fail_on_error else 0)
 
     except click.UsageError:
-        # Propagate Click usage errors for standard exit code (typically 2)
         raise
     except click.exceptions.Exit:
-        # Allow Click's explicit Exit (with code) to propagate unchanged
         raise
-    except Exception as e:  # Fallback: print concise error and return generic failure
+    except Exception as e:
         logger.error(f"Schema command error: {str(e)}")
         _safe_echo(f"❌ Error: {str(e)}", err=True)
-        import click as _click
-
-        raise _click.exceptions.Exit(1)
+        raise click.exceptions.Exit(1)

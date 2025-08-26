@@ -236,71 +236,60 @@ class SourceParser:
 
         path = Path(file_path)
 
-        # Check if file exists
         if not path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
         if not path.is_file():
             raise ValidationError(f"Path is not a file: {file_path}")
 
-        # Determine file type
         file_ext = path.suffix.lower()
         conn_type = self.file_extensions.get(file_ext)
 
         if not conn_type:
-            # Try to infer from content or use CSV as default
             conn_type = ConnectionType.CSV
             self.logger.warning(
                 f"Unknown file extension {file_ext}, assuming CSV format"
             )
 
-        # Check if this is a multi-table Excel file
         is_multi_table = False
         sheets_info = {}
         if conn_type == ConnectionType.EXCEL:
-            is_multi_table = self.is_multi_table_excel(file_path)
-            if is_multi_table:
-                try:
-                    sheets_info = self.get_excel_sheets(file_path)
+            try:
+                sheets_info = self.get_excel_sheets(file_path)
+                if len(sheets_info) > 1:
+                    is_multi_table = True
                     self.logger.info(f"Multi-table Excel file detected with {len(sheets_info)} sheets: {list(sheets_info.keys())}")
-                except Exception as e:
-                    self.logger.warning(f"Could not read Excel sheets: {str(e)}")
-                    is_multi_table = False
+            except Exception as e:
+                self.logger.warning(f"Could not read Excel sheets, treating as single-table: {str(e)}")
+                is_multi_table = False
 
-        # Prepare parameters
         parameters = {
             "filename": path.name,
             "file_size": path.stat().st_size,
-            "encoding": "utf-8",  # Default encoding
+            "encoding": "utf-8",
         }
         
-        # Add multi-table information for Excel files
         if is_multi_table and sheets_info:
             parameters["is_multi_table"] = True
             parameters["sheets"] = sheets_info
-            parameters["table_count"] = len(sheets_info)
+            available_tables = list(sheets_info.keys())
         else:
             parameters["is_multi_table"] = False
+            available_tables = [path.stem]
 
         return ConnectionSchema(
             name=f"file_connection_{uuid4().hex[:8]}",
             description=f"File connection: {path.name}" + (" (multi-table)" if is_multi_table else ""),
             connection_type=conn_type,
-            host=None,
-            port=None,
-            db_name=None,
-            username=None,
-            password=None,
-            db_schema=None,
             file_path=str(path.absolute()),
             parameters=parameters,
+            available_tables=available_tables,
             capabilities=DataSourceCapability(
                 supports_sql=False,
                 supports_batch_export=True,
-                max_export_rows=100000 if not is_multi_table else 50000,  # Reduce for multi-table
-                estimated_throughput=5000 if not is_multi_table else 2000,  # Reduce for multi-table
+                max_export_rows=100000 if not is_multi_table else 50000,
+                estimated_throughput=5000 if not is_multi_table else 2000,
             ),
-            cross_db_settings=None,
         )
 
     def _detect_database_type(self, url: str) -> ConnectionType:
@@ -376,14 +365,9 @@ class SourceParser:
             name=f"sqlite_connection_{uuid4().hex[:8]}",
             description=f"SQLite connection: {Path(file_path).name}",
             connection_type=ConnectionType.SQLITE,
-            host=None,
-            port=None,
-            db_name=None,
-            username=None,
-            password=None,
-            db_schema=None,
             file_path=file_path,
             parameters=parameters,
+            available_tables=[table] if table else [],
             capabilities=DataSourceCapability(
                 supports_sql=True,
                 supports_batch_export=True,

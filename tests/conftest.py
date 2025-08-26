@@ -17,6 +17,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import the database connection management module.
 from shared.database.connection import close_all_engines
+from shared.config.loader import load_config
+
+# Load test-specific logging configuration
+try:
+    test_logging_config = load_config("logging.test.toml")
+    if test_logging_config:
+        # Apply test logging configuration
+        for module, level in test_logging_config.get("module_levels", {}).items():
+            _logging.getLogger(module).setLevel(getattr(_logging, level.upper()))
+except Exception:
+    # Fallback to default configuration if test config not found
+    pass
 
 # ---------------------------------------------------------------------------
 # Hypothesis global configuration – suppress HealthCheck for function-scoped
