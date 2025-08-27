@@ -149,20 +149,23 @@ class TestSchemaPrioritizationAndOutputs:
         atomic_rules = [schema, not_null_email, range_age]
 
         # Simulate SCHEMA execution details
-        schema_result = {
-            "execution_plan": {
-                "schema_details": {
-                    "field_results": [
-                        {"column": "email", "failure_code": "TYPE_MISMATCH"},
-                        {"column": "age", "failure_code": "FIELD_MISSING"},
-                        {"column": "id", "failure_code": "NONE"},
-                    ]
-                }
+        schema_results = [
+            {
+                "rule_id": str(schema.id),
+                "execution_plan": {
+                    "schema_details": {
+                        "field_results": [
+                            {"column": "email", "failure_code": "TYPE_MISMATCH"},
+                            {"column": "age", "failure_code": "FIELD_MISSING"},
+                            {"column": "id", "failure_code": "NONE"},
+                        ]
+                    }
+                },
             }
-        }
+        ]
 
         skip_map = _build_prioritized_atomic_status(
-            schema_result=schema_result, atomic_rules=atomic_rules
+            schema_results=schema_results, atomic_rules=atomic_rules
         )
 
         # email dependent rules should be skipped for TYPE_MISMATCH

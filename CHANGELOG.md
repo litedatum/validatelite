@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - refactor(schema): improve output formatting with table-grouped results display
 - refactor(schema): enhance rule decomposition logic for multi-table support
 - refactor(data-validator): improve multi-table detection and processing capabilities
+- refactor(schema): preserve field order from initial JSON definition instead of alphabetical sorting
+- refactor(schema): consolidate field validation information display to single line per field
 
 ### Fixed
 - fix(cli): resolve issue where `--table` parameter was not correctly passed to backend
@@ -38,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(schema): resolve multi-table rules validation and type checking issues
 - fix(schema): improve table name detection and validation in multi-table scenarios
 - fix(schema): enhance error handling for multi-table validation workflows
+- fix(schema): ensure schema-only rule fields are not omitted from validation results
+- fix(schema): properly display skip conventions for non-existent columns (FIELD_MISSING/TYPE_MISMATCH)
 
 ### Removed
 - **BREAKING CHANGE**: remove backward compatibility for old positional argument interface

@@ -48,7 +48,7 @@ def _validate_multi_table_rules_payload(payload: Any) -> Tuple[List[str], int]:
         "strict_mode": true
       },
       "table2": {
-        "rules": [...] 
+        "rules": [...]
       }
     }
 
@@ -413,48 +413,47 @@ def _build_prioritized_atomic_status(
 ) -> Dict[str, Dict[str, str]]:
     """Return a mapping rule_id -> {status, skip_reason} applying prioritization."""
     mapping: Dict[str, Dict[str, str]] = {}
-    column_guard: Dict[str, str] = {}
+    schema_failures: Dict[str, str] = (
+        {}
+    )  # Key: f"{table}.{column}", Value: failure_code
 
     schema_rules_map = {
         str(rule.id): rule for rule in atomic_rules if rule.type == RuleType.SCHEMA
     }
 
-    for schema_result in schema_results:
-        rule_id = str(schema_result.get("rule_id", ""))
+    for res in schema_results:
+        rule_id = str(res.get("rule_id", ""))
         rule = schema_rules_map.get(rule_id)
         if not rule:
             continue
-        
-        table_name = rule.get_target_info().get("table")
-        if not table_name:
-            continue
 
-        execution_plan = schema_result.get("execution_plan") or {}
-        schema_details = execution_plan.get("schema_details") or {}
-        details = schema_details.get("field_results") or []
+        table = rule.get_target_info().get("table", "")
+        details = (
+            res.get("execution_plan", {})
+            .get("schema_details", {})
+            .get("field_results", [])
+        )
+
         for item in details:
-            col = str(item.get("column"))
-            code = str(item.get("failure_code", "NONE"))
-            column_guard[f"{table_name}.{col}"] = code
+            code = item.get("failure_code")
+            if code in ("FIELD_MISSING", "TYPE_MISMATCH"):
+                col = item.get("column")
+                if col:
+                    schema_failures[f"{table}.{col}"] = code
 
-    for r in atomic_rules:
-        if r.type == RuleType.SCHEMA:
-            continue
-        
-        target_info = r.get_target_info()
-        table_name = target_info.get("table")
-        column_name = target_info.get("column")
+    if not schema_failures:
+        return {}
 
-        if not table_name or not column_name:
+    for rule in atomic_rules:
+        if rule.type == RuleType.SCHEMA:
             continue
 
-        guard_key = f"{table_name}.{column_name}"
-        guard = column_guard.get(guard_key, "NONE")
+        col = rule.get_target_column()
+        table = rule.get_target_info().get("table", "")
 
-        if guard == "FIELD_MISSING":
-            mapping[r.id] = {"status": "SKIPPED", "skip_reason": "FIELD_MISSING"}
-        elif guard == "TYPE_MISMATCH":
-            mapping[r.id] = {"status": "SKIPPED", "skip_reason": "TYPE_MISMATCH"}
+        if col and f"{table}.{col}" in schema_failures:
+            reason = schema_failures[f"{table}.{col}"]
+            mapping[str(rule.id)] = {"status": "SKIPPED", "skip_reason": reason}
 
     return mapping
 
@@ -569,7 +568,7 @@ def _extract_schema_results(
     }
     if not schema_rule_ids:
         return []
-    
+
     for r in results:
         if r is None:
             continue
@@ -581,7 +580,7 @@ def _extract_schema_results(
                 rid = ""
         elif isinstance(r, dict):
             rid = str(r.get("rule_id", ""))
-        
+
         if rid in schema_rule_ids:
             schema_results.append(
                 r.model_dump() if hasattr(r, "model_dump") else cast(Dict[str, Any], r)
@@ -653,7 +652,7 @@ def _emit_json_output(
         schema_plan = (schema_result or {}).get("execution_plan", {}) or {}
         schema_details = schema_plan.get("schema_details", {}) or {}
         field_results = schema_details.get("field_results", []) or []
-        
+
         rule_id = str(schema_result.get("rule_id", ""))
         rule = schema_rules_map.get(rule_id)
         table_name = rule.get_target_info().get("table") if rule else "unknown"
@@ -712,11 +711,11 @@ def _emit_json_output(
         rule = rule_map.get(rule_id)
         if not rule or rule.type == RuleType.SCHEMA:
             continue
-        
+
         column_name = rule.get_target_column() or ""
         if not column_name:
             continue
-        
+
         table_name = "unknown"
         if rule.target and rule.target.entities:
             table_name = rule.target.entities[0].table
@@ -728,7 +727,7 @@ def _emit_json_output(
             schema_fields_index[f"{table_name}.{column_name}"] = l_entry
         else:
             l_entry["table"] = table_name
-        
+
         t = rule.type
         if t == RuleType.NOT_NULL:
             key = "not_null"
@@ -742,13 +741,13 @@ def _emit_json_output(
             key = "date_format"
         else:
             key = t.value.lower()
-        
+
         check = _ensure_check(l_entry, key)
         check["status"] = str(rd.get("status", "UNKNOWN"))
         if rule_id in skip_map:
             check["status"] = skip_map[rule_id]["status"]
             check["skip_reason"] = skip_map[rule_id]["skip_reason"]
-        
+
         fr = _failed_records_of(rd)
         if fr:
             check["failed_records"] = fr
@@ -769,7 +768,10 @@ def _emit_json_output(
     for schema_result in schema_results:
         try:
             extras = (
-                (schema_result or {}).get("execution_plan", {}).get("schema_details", {}).get("extras", [])
+                (schema_result or {})
+                .get("execution_plan", {})
+                .get("schema_details", {})
+                .get("extras", [])
             )
             if isinstance(extras, list):
                 schema_extras.extend([str(x) for x in extras])
@@ -887,7 +889,7 @@ def _emit_table_output(
             if col not in tables_grouped[table_name]:
                 tables_grouped[table_name][col] = {"column": col, "issues": []}
 
-            status = str(rd.get("status", "UNKNOWN"))
+            status: Any = str(rd.get("status", "UNKNOWN"))
             if rd.get("rule_type") == RuleType.NOT_NULL.value:
                 key = "not_null"
             elif rd.get("rule_type") == RuleType.RANGE.value:
@@ -907,22 +909,23 @@ def _emit_table_output(
                     }
                 )
 
-    all_columns_by_table: Dict[str, set] = {}
+    all_columns_by_table: Dict[str, List[str]] = {}
     for rule in atomic_rules:
         if rule.target and rule.target.entities:
             table_name = rule.target.entities[0].table
             if table_name not in all_columns_by_table:
-                all_columns_by_table[table_name] = set()
-            
+                all_columns_by_table[table_name] = []
+
             if rule.type == RuleType.SCHEMA:
                 if rule.parameters:
                     declared_cols = (rule.parameters.get("columns") or {}).keys()
                     for col in declared_cols:
-                        all_columns_by_table[table_name].add(str(col))
+                        if str(col) not in all_columns_by_table[table_name]:
+                            all_columns_by_table[table_name].append(str(col))
             else:
                 column_name = rule.get_target_column()
-                if column_name:
-                    all_columns_by_table[table_name].add(column_name)
+                if column_name and column_name not in all_columns_by_table[table_name]:
+                    all_columns_by_table[table_name].append(column_name)
 
     for table_name, columns in all_columns_by_table.items():
         if table_name not in tables_grouped:
@@ -942,7 +945,7 @@ def _emit_table_output(
         rule = schema_rules_map.get(rule_id)
         if not rule:
             continue
-        
+
         table_name = rule.get_target_info().get("table")
         if not table_name or table_name not in tables_grouped:
             continue
@@ -952,6 +955,8 @@ def _emit_table_output(
         details = schema_details.get("field_results", []) or []
         for item in details:
             col = str(item.get("column"))
+            if col not in tables_grouped[table_name]:
+                continue
             if item.get("failure_code") == "FIELD_MISSING":
                 tables_grouped[table_name][col]["issues"].append(
                     {"check": "missing", "status": "FAILED"}
@@ -968,59 +973,84 @@ def _emit_table_output(
         int(r.get("failed_records", 0) or 0) for r in table_results
     )
 
-    for table_name in sorted(tables_grouped.keys()):
+    sorted_tables = sorted(tables_grouped.keys())
+
+    for table_name in sorted_tables:
         records = table_records.get(table_name, 0)
         lines.append(f"\n📋 Table: {table_name} ({records:,} records)")
 
         table_grouped = tables_grouped[table_name]
-        for col in sorted(table_grouped.keys()):
+        ordered_columns = all_columns_by_table.get(table_name, [])
+
+        # Fallback for columns that might appear in results but not in rules
+        # (e.g., from a different source)
+        result_columns = sorted(table_grouped.keys())
+        for col in result_columns:
+            if col not in ordered_columns:
+                ordered_columns.append(col)
+
+        for col in ordered_columns:
+            if col not in table_grouped:
+                lines.append(f"✓ {col}: OK")
+                continue
+
             issues = table_grouped[col]["issues"]
-            
-            # Consolidate issues to avoid duplicates, prioritizing 'missing'
-            final_issues = []
-            has_missing = any(i.get("check") == "missing" for i in issues)
-            if has_missing:
-                final_issues.append({"check": "missing", "status": "FAILED"})
-            else:
-                final_issues.extend(issues)
 
-            critical = [i for i in final_issues if i["status"] in {"FAILED", "ERROR"}]
-            skipped = [i for i in final_issues if i["status"] == "SKIPPED"]
+            if not issues:
+                lines.append(f"✓ {col}: OK")
+                continue
 
-            if not critical and not skipped:
+            is_missing = any(
+                i.get("check") == "missing" or i.get("skip_reason") == "FIELD_MISSING"
+                for i in issues
+            )
+
+            if is_missing:
+                lines.append(f"✗ {col}: missing (skipped dependent checks)")
+                continue
+
+            unique_issues: Dict[Tuple[str, str], Dict[str, Any]] = {}
+            for issue in issues:
+                key_ = (str(issue.get("status")), str(issue.get("check")))
+                if key_ not in unique_issues:
+                    unique_issues[key_] = issue
+
+            final_issues = sorted(
+                unique_issues.values(), key=lambda x: str(x.get("check"))
+            )
+
+            issue_descs: List[str] = []
+            for i in final_issues:
+                status = i.get("status")
+                check = i.get("check", "unknown")
+
+                if status in {"FAILED", "ERROR"}:
+                    fr = i.get("failed_records", 0)
+                    if status == "ERROR":
+                        issue_descs.append(f"{check} error")
+                    else:
+                        issue_descs.append(f"{check} failed ({fr} failures)")
+                elif status == "SKIPPED":
+                    skip_reason = i.get("skip_reason")
+                    if skip_reason == "TYPE_MISMATCH":
+                        issue_descs.append("type mismatch (skipped dependent checks)")
+                    else:
+                        reason_text = skip_reason or "unknown reason"
+                        issue_descs.append(f"{check} skipped ({reason_text})")
+
+            if not issue_descs:
                 lines.append(f"✓ {col}: OK")
             else:
-                printed_checks = set()
-                for i in critical:
-                    check_key = i['check']
-                    if check_key in printed_checks: continue
-                    printed_checks.add(check_key)
+                lines.append(f"✗ {col}: { ', '.join(issue_descs)}")
 
-                    fr = i.get("failed_records", 0)
-                    if i["check"] == "missing":
-                        lines.append(f"✗ {col}: missing (skipped dependent checks)")
-                    elif i["status"] == "ERROR":
-                        lines.append(f"✗ {col}: {i['check']} error")
-                    else:
-                        lines.append(f"✗ {col}: {i['check']} failed ({fr} failures)")
-
-                for i in skipped:
-                    check_key = i.get("skip_reason")
-                    if check_key in printed_checks: continue
-                    printed_checks.add(check_key)
-
-                    skip_reason = i.get("skip_reason", "unknown reason")
-                    if skip_reason == "FIELD_MISSING":
-                        lines.append(f"✗ {col}: missing (skipped dependent checks)")
-                    elif skip_reason == "TYPE_MISMATCH":
-                        lines.append(f"✗ {col}: type mismatch (skipped dependent checks)")
-                    else:
-                        lines.append(f"✗ {col}: {i['check']} skipped ({skip_reason})")
-
-    total_columns = sum(len(tables_grouped[table]) for table in tables_grouped)
+    total_columns = sum(len(all_columns_by_table.get(t, [])) for t in sorted_tables)
     passed_columns = sum(
-        sum(1 for col in table_grouped.values() if not col["issues"])
-        for table_grouped in tables_grouped.values()
+        sum(
+            1
+            for c in all_columns_by_table.get(t, [])
+            if not tables_grouped.get(t, {}).get(c, {}).get("issues", [])
+        )
+        for t in sorted_tables
     )
     failed_columns = total_columns - passed_columns
     overall_error_rate = (
@@ -1031,12 +1061,15 @@ def _emit_table_output(
 
     if len(tables_grouped) > 1:
         lines.append("\n📊 Multi-table Summary:")
-        for table_name in sorted(tables_grouped.keys()):
-            table_columns = len(tables_grouped[table_name])
+        for table_name in sorted_tables:
+            table_cols = all_columns_by_table.get(table_name, [])
+            table_columns_count = len(table_cols)
             table_passed = sum(
-                1 for col in tables_grouped[table_name].values() if not col["issues"]
+                1
+                for c in table_cols
+                if not tables_grouped[table_name].get(c, {}).get("issues")
             )
-            table_failed = table_columns - table_passed
+            table_failed = table_columns_count - table_passed
             lines.append(
                 f"  {table_name}: {table_passed} passed, {table_failed} failed"
             )

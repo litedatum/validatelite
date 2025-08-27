@@ -793,9 +793,11 @@ class QueryExecutor:
 
                 if not name:
                     # If column name not found, skip this column with a warning
-                    self.logger.warning(f"Could not determine column name from result: {col}")
+                    self.logger.warning(
+                        f"Could not determine column name from result: {col}"
+                    )
                     continue
-                
+
                 if not type_:
                     type_ = "unknown"
 
