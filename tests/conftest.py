@@ -15,9 +15,10 @@ import pytest_asyncio
 # Add the project root directory to the Python path.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from shared.config.loader import load_config
+
 # Import the database connection management module.
 from shared.database.connection import close_all_engines
-from shared.config.loader import load_config
 
 # Load test-specific logging configuration
 try:

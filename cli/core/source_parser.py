@@ -8,7 +8,7 @@ Supports files (CSV, Excel, JSON) and database URLs.
 import re
 import urllib.parse
 from pathlib import Path
-from typing import Optional, Tuple, Dict, List
+from typing import Dict, List, Optional, Tuple
 from uuid import uuid4
 
 from cli.exceptions import ValidationError
@@ -98,13 +98,13 @@ class SourceParser:
     def get_excel_sheets(self, file_path: str) -> Dict[str, List[str]]:
         """
         Get sheet names from Excel file.
-        
+
         Args:
             file_path: Path to Excel file
-            
+
         Returns:
             Dict with sheet names as keys and column lists as values
-            
+
         Raises:
             ImportError: If pandas/openpyxl not available
             FileNotFoundError: If file not found
@@ -113,16 +113,16 @@ class SourceParser:
             import pandas as pd
         except ImportError:
             raise ImportError("pandas is required to read Excel files")
-        
+
         try:
             excel_file = pd.ExcelFile(file_path)
             sheets_info = {}
-            
+
             for sheet_name in excel_file.sheet_names:
                 # Read first few rows to get column names
                 df = pd.read_excel(file_path, sheet_name=sheet_name, nrows=0)
                 sheets_info[sheet_name] = list(df.columns)
-            
+
             return sheets_info
         except Exception as e:
             self.logger.error(f"Error reading Excel file {file_path}: {str(e)}")
@@ -130,16 +130,18 @@ class SourceParser:
 
     def is_multi_table_excel(self, file_path: str) -> bool:
         """
-        Check if Excel file contains multiple sheets that could represent multiple tables.
-        
+        Check if Excel file contains multiple sheets that could represent
+          multiple tables.
+
         Args:
             file_path: Path to Excel file
-            
+
         Returns:
             True if file has multiple sheets, False otherwise
         """
         try:
             import pandas as pd
+
             excel_file = pd.ExcelFile(file_path)
             return len(excel_file.sheet_names) > 1
         except ImportError:
@@ -258,9 +260,14 @@ class SourceParser:
                 sheets_info = self.get_excel_sheets(file_path)
                 if len(sheets_info) > 1:
                     is_multi_table = True
-                    self.logger.info(f"Multi-table Excel file detected with {len(sheets_info)} sheets: {list(sheets_info.keys())}")
+                    self.logger.info(
+                        f"Multi-table Excel file detected with {len(sheets_info)} "
+                        "sheets: {list(sheets_info.keys())}"
+                    )
             except Exception as e:
-                self.logger.warning(f"Could not read Excel sheets, treating as single-table: {str(e)}")
+                self.logger.warning(
+                    f"Could not read Excel sheets, treating as single-table: {str(e)}"
+                )
                 is_multi_table = False
 
         parameters = {
@@ -268,7 +275,7 @@ class SourceParser:
             "file_size": path.stat().st_size,
             "encoding": "utf-8",
         }
-        
+
         if is_multi_table and sheets_info:
             parameters["is_multi_table"] = True
             parameters["sheets"] = sheets_info
@@ -279,7 +286,8 @@ class SourceParser:
 
         return ConnectionSchema(
             name=f"file_connection_{uuid4().hex[:8]}",
-            description=f"File connection: {path.name}" + (" (multi-table)" if is_multi_table else ""),
+            description=f"File connection: {path.name}"
+            + (" (multi-table)" if is_multi_table else ""),
             connection_type=conn_type,
             file_path=str(path.absolute()),
             parameters=parameters,

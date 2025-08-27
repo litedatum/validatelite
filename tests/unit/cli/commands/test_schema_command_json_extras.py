@@ -43,8 +43,8 @@ class TestSchemaJsonExtrasAndSummary:
             }
         )
         monkeypatch.setattr(
-            "cli.commands.schema._decompose_to_atomic_rules",
-            lambda payload: [schema_rule],
+            "cli.commands.schema._decompose_schema_payload",
+            lambda payload, source_config: [schema_rule],
         )
 
         # Results: SCHEMA failed with 1 type mismatch, 0 existence failures, extras present
@@ -76,6 +76,12 @@ class TestSchemaJsonExtrasAndSummary:
         }
 
         class DummyValidator:
+            def __init__(
+                self, source_config: Any, rules: Any, core_config: Any, cli_config: Any
+            ) -> None:
+                # Accept all required parameters but don't use them
+                pass
+
             async def validate(self) -> List[Dict[str, Any]]:  # type: ignore[override]
                 return [schema_result]
 
@@ -97,10 +103,23 @@ class TestSchemaJsonExtrasAndSummary:
         )
 
         result = runner.invoke(
-            cli_app, ["schema", data_path, "--rules", rules_path, "--output", "json"]
+            cli_app,
+            ["schema", "--conn", data_path, "--rules", rules_path, "--output", "json"],
         )
         assert result.exit_code == 1
-        payload = json.loads(result.output)
+
+        # Extract JSON part from output (skip warning messages)
+        output_lines = result.output.strip().split("\n")
+        json_line = None
+        for line in output_lines:
+            if line.strip().startswith("{"):
+                json_line = line.strip()
+                break
+
+        if not json_line:
+            raise ValueError("No JSON output found in result")
+
+        payload = json.loads(json_line)
 
         # schema_extras must present, sorted by CLI before emission
         assert payload.get("schema_extras") == ["aaa_extra", "zzz_extra"]
@@ -115,8 +134,8 @@ class TestSchemaJsonExtrasAndSummary:
     ) -> None:
         schema_rule = _schema_rule_with({"id": {"expected_type": "INTEGER"}})
         monkeypatch.setattr(
-            "cli.commands.schema._decompose_to_atomic_rules",
-            lambda payload: [schema_rule],
+            "cli.commands.schema._decompose_schema_payload",
+            lambda payload, source_config: [schema_rule],
         )
 
         schema_result = {
@@ -131,6 +150,12 @@ class TestSchemaJsonExtrasAndSummary:
         }
 
         class DummyValidator:
+            def __init__(
+                self, source_config: Any, rules: Any, core_config: Any, cli_config: Any
+            ) -> None:
+                # Accept all required parameters but don't use them
+                pass
+
             async def validate(self) -> List[Dict[str, Any]]:  # type: ignore[override]
                 return [schema_result]
 
@@ -143,7 +168,9 @@ class TestSchemaJsonExtrasAndSummary:
             "schema.json",
             json.dumps({"rules": [{"field": "id", "type": "integer"}]}),
         )
-        result = runner.invoke(cli_app, ["schema", data_path, "--rules", rules_path])
+        result = runner.invoke(
+            cli_app, ["schema", "--conn", data_path, "--rules", rules_path]
+        )
         assert result.exit_code == 0
         # Plain text output should not dump JSON key name
         assert "schema_extras" not in result.output

@@ -59,13 +59,15 @@ def _param_db_urls() -> list[object]:
 def test_happy_path_table_and_json(tmp_path: Path, db_url: str) -> None:
     # Schema baseline + a couple atomic rules
     rules = {
-        "rules": [
-            {"field": "id", "type": "integer", "required": True},
-            {"field": "email", "type": "string"},
-            {"field": "age", "type": "integer", "min": 0, "max": 150},
-        ],
-        "strict_mode": False,
-        "case_insensitive": True,
+        "customers": {
+            "rules": [
+                {"field": "id", "type": "integer", "required": True},
+                {"field": "email", "type": "string"},
+                {"field": "age", "type": "integer", "min": 0, "max": 150},
+            ],
+            "strict_mode": False,
+            "case_insensitive": True,
+        }
     }
     rules_file = _write_rules(tmp_path, rules)
 
@@ -75,8 +77,6 @@ def test_happy_path_table_and_json(tmp_path: Path, db_url: str) -> None:
             "schema",
             "--conn",
             db_url,
-            "--table",
-            "customers",
             "--rules",
             rules_file,
             "--output",
@@ -92,8 +92,6 @@ def test_happy_path_table_and_json(tmp_path: Path, db_url: str) -> None:
             "schema",
             "--conn",
             db_url,
-            "--table",
-            "customers",
             "--rules",
             rules_file,
             "--output",
@@ -117,16 +115,18 @@ def test_happy_path_table_and_json(tmp_path: Path, db_url: str) -> None:
 def test_drift_missing_and_type_mismatch(tmp_path: Path, db_url: str) -> None:
     # Declare a missing column and mismatched type to trigger SKIPPED in JSON for dependent rules
     rules = {
-        "rules": [
-            {"field": "email", "type": "integer", "required": True},  # mismatch
-            {
-                "field": "status",
-                "type": "string",
-                "enum": ["active", "inactive"],
-            },  # missing
-        ],
-        "strict_mode": False,
-        "case_insensitive": True,
+        "customers": {
+            "rules": [
+                {"field": "email", "type": "integer", "required": True},  # mismatch
+                {
+                    "field": "status",
+                    "type": "string",
+                    "enum": ["active", "inactive"],
+                },  # missing
+            ],
+            "strict_mode": False,
+            "case_insensitive": True,
+        }
     }
     rules_file = _write_rules(tmp_path, rules)
 
@@ -135,8 +135,6 @@ def test_drift_missing_and_type_mismatch(tmp_path: Path, db_url: str) -> None:
             "schema",
             "--conn",
             db_url,
-            "--table",
-            "customers",
             "--rules",
             rules_file,
             "--output",
@@ -162,11 +160,13 @@ def test_drift_missing_and_type_mismatch(tmp_path: Path, db_url: str) -> None:
 @pytest.mark.parametrize("db_url", _param_db_urls())
 def test_strict_mode_extras_json(tmp_path: Path, db_url: str) -> None:
     rules = {
-        "rules": [
-            {"field": "id", "type": "integer"},
-        ],
-        "strict_mode": True,
-        "case_insensitive": True,
+        "customers": {
+            "rules": [
+                {"field": "id", "type": "integer"},
+            ],
+            "strict_mode": True,
+            "case_insensitive": True,
+        }
     }
     rules_file = _write_rules(tmp_path, rules)
 
@@ -175,8 +175,6 @@ def test_strict_mode_extras_json(tmp_path: Path, db_url: str) -> None:
             "schema",
             "--conn",
             db_url,
-            "--table",
-            "customers",
             "--rules",
             rules_file,
             "--output",
@@ -205,8 +203,6 @@ def test_empty_rules_minimal_payload(tmp_path: Path) -> None:
             "schema",
             "--conn",
             str(data_file),
-            "--table",
-            "data",
             "--rules",
             rules_file,
             "--output",

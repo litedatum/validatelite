@@ -39,8 +39,8 @@ class TestSchemaCommandForFileSources:
             {"reg_date": {"expected_type": "DATE"}, "ts": {"expected_type": "DATETIME"}}
         )
         monkeypatch.setattr(
-            "cli.commands.schema._decompose_to_atomic_rules",
-            lambda payload: [schema_rule],
+            "cli.commands.schema._decompose_schema_payload",
+            lambda payload, source_config: [schema_rule],
         )
 
         # Build SCHEMA result indicating SQLite TEXT types cause TYPE_MISMATCH
@@ -72,6 +72,12 @@ class TestSchemaCommandForFileSources:
         }
 
         class DummyValidator:
+            def __init__(
+                self, source_config: Any, rules: Any, core_config: Any, cli_config: Any
+            ) -> None:
+                # Accept all required parameters but don't use them
+                pass
+
             async def validate(self) -> List[Dict[str, Any]]:  # type: ignore[override]
                 return [schema_result]
 
@@ -98,7 +104,8 @@ class TestSchemaCommandForFileSources:
 
         runner = CliRunner()
         result = runner.invoke(
-            cli_app, ["schema", data_path, "--rules", rules_path, "--output", "json"]
+            cli_app,
+            ["schema", "--conn", data_path, "--rules", rules_path, "--output", "json"],
         )
 
         assert result.exit_code == 1

@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - feat(cli): refactor check command interface from positional arguments to `--conn` and `--table` options
 - feat(cli): add comprehensive test coverage for new CLI interface functionality
 - feat(cli): support explicit table name specification independent of database URL
+- feat(schema): add comprehensive multi-table support for schema validation
+- feat(schema): support multi-table rules format with table-level configuration options
+- feat(schema): add Excel multi-sheet file support as data source
+- feat(schema): implement table-grouped output display for multi-table validation results
+- feat(schema): add table-level options support (strict_mode, case_insensitive)
+- feat(tests): add comprehensive multi-table functionality test coverage
+- feat(tests): add multi-table Excel file validation test scenarios
 
 ### Changed
 - **BREAKING CHANGE**: CLI interface changed from `vlite-cli check <source>` to `vlite-cli check --conn <connection> --table <table_name>`
@@ -18,12 +25,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - refactor(cli): modify check command to pass table_name to SourceParser.parse_source()
 - refactor(tests): update all existing CLI tests to use new interface format
 - refactor(tests): add new test cases specifically for table name parameter validation
+- refactor(schema): enhance schema command to support both single-table and multi-table formats
+- refactor(schema): improve output formatting with table-grouped results display
+- refactor(schema): enhance rule decomposition logic for multi-table support
+- refactor(data-validator): improve multi-table detection and processing capabilities
 
 ### Fixed
 - fix(cli): resolve issue where `--table` parameter was not correctly passed to backend
 - fix(cli): ensure table name from `--table` option takes precedence over table name in database URL
 - fix(tests): update regression tests to use new CLI interface format
 - fix(tests): resolve test failures caused by interface changes
+- fix(schema): resolve multi-table rules validation and type checking issues
+- fix(schema): improve table name detection and validation in multi-table scenarios
+- fix(schema): enhance error handling for multi-table validation workflows
 
 ### Removed
 - **BREAKING CHANGE**: remove backward compatibility for old positional argument interface
