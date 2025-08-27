@@ -48,7 +48,7 @@ def _validate_multi_table_rules_payload(payload: Any) -> Tuple[List[str], int]:
         "strict_mode": true
       },
       "table2": {
-        "rules": [...]
+        "rules": [...] 
       }
     }
 
@@ -389,7 +389,7 @@ def _decompose_single_table_schema(
         atomic_rules.insert(
             0,
             _create_rule_schema(
-                name="schema",
+                name=f"schema_{table_name}",
                 rule_type=RuleType.SCHEMA,
                 column=None,
                 parameters=schema_params,
@@ -406,52 +406,51 @@ def _decompose_single_table_schema(
     return atomic_rules
 
 
-# def _decompose_to_atomic_rules(payload: Dict[str, Any]) -> List[RuleSchema]:
-#     """Decompose schema JSON payload into atomic RuleSchema objects.
-
-#     This function is kept for backward compatibility but now delegates to
-#     the new multi-table aware function.
-#     """
-#     # For backward compatibility, we need to determine the source_db
-#     # This will be handled by the caller
-#     return _decompose_multi_table_schema(payload, "unknown")
-
-
 def _build_prioritized_atomic_status(
     *,
-    schema_result: Dict[str, Any] | None,
+    schema_results: List[Dict[str, Any]],
     atomic_rules: List[RuleSchema],
 ) -> Dict[str, Dict[str, str]]:
-    """Return a mapping rule_id -> {status, skip_reason} applying prioritization.
-
-    Prioritization per column:
-      1) If field missing → mark SCHEMA for that field as FAILED (implicit) and all
-         dependent rules (NOT_NULL/RANGE/ENUM) as SKIPPED (reason FIELD_MISSING).
-      2) If type mismatch → mark dependent rules as SKIPPED (reason TYPE_MISMATCH).
-      3) Otherwise, leave dependent rules to their engine-evaluated status.
-
-    We infer per-column status from schema_result.execution_plan.schema_details.
-    """
+    """Return a mapping rule_id -> {status, skip_reason} applying prioritization."""
     mapping: Dict[str, Dict[str, str]] = {}
+    column_guard: Dict[str, str] = {}
 
-    # Build per-column guard from SCHEMA details
-    column_guard: Dict[str, str] = {}  # column -> NONE|FIELD_MISSING|TYPE_MISMATCH
-    if schema_result:
-        # Safely access nested dictionaries, checking for None at each level.
+    schema_rules_map = {
+        str(rule.id): rule for rule in atomic_rules if rule.type == RuleType.SCHEMA
+    }
+
+    for schema_result in schema_results:
+        rule_id = str(schema_result.get("rule_id", ""))
+        rule = schema_rules_map.get(rule_id)
+        if not rule:
+            continue
+        
+        table_name = rule.get_target_info().get("table")
+        if not table_name:
+            continue
+
         execution_plan = schema_result.get("execution_plan") or {}
         schema_details = execution_plan.get("schema_details") or {}
         details = schema_details.get("field_results") or []
         for item in details:
             col = str(item.get("column"))
             code = str(item.get("failure_code", "NONE"))
-            column_guard[col] = code
+            column_guard[f"{table_name}.{col}"] = code
 
-    # Apply skip to dependent rules
     for r in atomic_rules:
         if r.type == RuleType.SCHEMA:
             continue
-        column = r.get_target_column() or ""
-        guard = column_guard.get(column, "NONE")
+        
+        target_info = r.get_target_info()
+        table_name = target_info.get("table")
+        column_name = target_info.get("column")
+
+        if not table_name or not column_name:
+            continue
+
+        guard_key = f"{table_name}.{column_name}"
+        guard = column_guard.get(guard_key, "NONE")
+
         if guard == "FIELD_MISSING":
             mapping[r.id] = {"status": "SKIPPED", "skip_reason": "FIELD_MISSING"}
         elif guard == "TYPE_MISMATCH":
@@ -560,43 +559,42 @@ def _run_validation(validator: Any) -> Tuple[List[Any], float]:
     return results, exec_seconds
 
 
-def _extract_schema_result_dict(
+def _extract_schema_results(
     *, atomic_rules: List[RuleSchema], results: List[Any]
-) -> Dict[str, Any] | None:
-    try:
-        schema_rule = next(
-            (rule for rule in atomic_rules if rule.type == RuleType.SCHEMA), None
-        )
-        if not schema_rule:
-            return None
-        for r in results:
-            if r is None:
-                continue
-            rid = ""
-            if hasattr(r, "rule_id"):
-                try:
-                    rid = str(getattr(r, "rule_id"))
-                except Exception:
-                    rid = ""
-            elif isinstance(r, dict):
-                rid = str(r.get("rule_id", ""))
-            if rid == str(schema_rule.id):
-                return (
-                    r.model_dump()
-                    if hasattr(r, "model_dump")
-                    else cast(Dict[str, Any], r)
-                )
-        return None
-    except Exception:
-        return None
+) -> List[Dict[str, Any]]:
+    """Extract all SCHEMA rule results from the list of validation results."""
+    schema_results = []
+    schema_rule_ids = {
+        str(rule.id) for rule in atomic_rules if rule.type == RuleType.SCHEMA
+    }
+    if not schema_rule_ids:
+        return []
+    
+    for r in results:
+        if r is None:
+            continue
+        rid = ""
+        if hasattr(r, "rule_id"):
+            try:
+                rid = str(getattr(r, "rule_id"))
+            except Exception:
+                rid = ""
+        elif isinstance(r, dict):
+            rid = str(r.get("rule_id", ""))
+        
+        if rid in schema_rule_ids:
+            schema_results.append(
+                r.model_dump() if hasattr(r, "model_dump") else cast(Dict[str, Any], r)
+            )
+    return schema_results
 
 
 def _compute_skip_map(
-    *, atomic_rules: List[RuleSchema], schema_result_dict: Dict[str, Any] | None
+    *, atomic_rules: List[RuleSchema], schema_results: List[Dict[str, Any]]
 ) -> Dict[str, Dict[str, str]]:
     try:
         return _build_prioritized_atomic_status(
-            schema_result=schema_result_dict, atomic_rules=atomic_rules
+            schema_results=schema_results, atomic_rules=atomic_rules
         )
     except Exception:
         return {}
@@ -609,7 +607,7 @@ def _emit_json_output(
     atomic_rules: List[RuleSchema],
     results: List[Any],
     skip_map: Dict[str, Dict[str, str]],
-    schema_result_dict: Dict[str, Any] | None,
+    schema_results: List[Dict[str, Any]],
     exec_seconds: float,
 ) -> None:
     enriched_results: List[Dict[str, Any]] = []
@@ -647,15 +645,24 @@ def _emit_json_output(
     fields: List[Dict[str, Any]] = []
     schema_fields_index: Dict[str, Dict[str, Any]] = {}
 
-    if schema_result_dict:
-        schema_plan = (schema_result_dict or {}).get("execution_plan", {}) or {}
+    schema_rules_map = {
+        str(rule.id): rule for rule in atomic_rules if rule.type == RuleType.SCHEMA
+    }
+
+    for schema_result in schema_results:
+        schema_plan = (schema_result or {}).get("execution_plan", {}) or {}
         schema_details = schema_plan.get("schema_details", {}) or {}
         field_results = schema_details.get("field_results", []) or []
+        
+        rule_id = str(schema_result.get("rule_id", ""))
+        rule = schema_rules_map.get(rule_id)
+        table_name = rule.get_target_info().get("table") if rule else "unknown"
+
         for item in field_results:
             col_name = str(item.get("column"))
             entry: Dict[str, Any] = {
                 "column": col_name,
-                "table": "unknown",  # Will be updated later with actual table name
+                "table": table_name,
                 "checks": {
                     "existence": {
                         "status": item.get("existence", "UNKNOWN"),
@@ -668,26 +675,25 @@ def _emit_json_output(
                 },
             }
             fields.append(entry)
-            schema_fields_index[col_name] = entry
+            schema_fields_index[f"{table_name}.{col_name}"] = entry
 
-    schema_rule = next(
-        (rule for rule in atomic_rules if rule.type == RuleType.SCHEMA), None
-    )
-    if schema_rule:
-        params = schema_rule.parameters or {}
-        declared_cols = (params.get("columns") or {}).keys()
-        for col in declared_cols:
-            if str(col) not in schema_fields_index:
-                entry = {
-                    "column": str(col),
-                    "table": "unknown",  # Will be updated later with actual table name
-                    "checks": {
-                        "existence": {"status": "UNKNOWN", "failure_code": "NONE"},
-                        "type": {"status": "UNKNOWN", "failure_code": "NONE"},
-                    },
-                }
-                fields.append(entry)
-                schema_fields_index[str(col)] = entry
+    for rule in atomic_rules:
+        if rule.type == RuleType.SCHEMA:
+            params = rule.parameters or {}
+            declared_cols = (params.get("columns") or {}).keys()
+            table_name = rule.get_target_info().get("table")
+            for col in declared_cols:
+                if f"{table_name}.{str(col)}" not in schema_fields_index:
+                    entry = {
+                        "column": str(col),
+                        "table": table_name,
+                        "checks": {
+                            "existence": {"status": "UNKNOWN", "failure_code": "NONE"},
+                            "type": {"status": "UNKNOWN", "failure_code": "NONE"},
+                        },
+                    }
+                    fields.append(entry)
+                    schema_fields_index[f"{table_name}.{str(col)}"] = entry
 
     def _ensure_check(entry: Dict[str, Any], name: str) -> Dict[str, Any]:
         checks: Dict[str, Dict[str, Any]] = entry.setdefault("checks", {})
@@ -706,22 +712,23 @@ def _emit_json_output(
         rule = rule_map.get(rule_id)
         if not rule or rule.type == RuleType.SCHEMA:
             continue
+        
         column_name = rule.get_target_column() or ""
         if not column_name:
             continue
-        # Add table name for multi-table support
+        
         table_name = "unknown"
         if rule.target and rule.target.entities:
             table_name = rule.target.entities[0].table
 
-        l_entry = schema_fields_index.get(column_name)
+        l_entry = schema_fields_index.get(f"{table_name}.{column_name}")
         if not l_entry:
             l_entry = {"column": column_name, "table": table_name, "checks": {}}
             fields.append(l_entry)
-            schema_fields_index[column_name] = l_entry
+            schema_fields_index[f"{table_name}.{column_name}"] = l_entry
         else:
-            # Ensure table name is set
             l_entry["table"] = table_name
+        
         t = rule.type
         if t == RuleType.NOT_NULL:
             key = "not_null"
@@ -735,11 +742,13 @@ def _emit_json_output(
             key = "date_format"
         else:
             key = t.value.lower()
+        
         check = _ensure_check(l_entry, key)
         check["status"] = str(rd.get("status", "UNKNOWN"))
         if rule_id in skip_map:
             check["status"] = skip_map[rule_id]["status"]
             check["skip_reason"] = skip_map[rule_id]["skip_reason"]
+        
         fr = _failed_records_of(rd)
         if fr:
             check["failed_records"] = fr
@@ -757,18 +766,15 @@ def _emit_json_output(
     total_failed_records = sum(_failed_records_of(r) for r in enriched_results)
 
     schema_extras: List[str] = []
-    if schema_result_dict:
+    for schema_result in schema_results:
         try:
             extras = (
-                (schema_result_dict or {})
-                .get("execution_plan", {})
-                .get("schema_details", {})
-                .get("extras", [])
+                (schema_result or {}).get("execution_plan", {}).get("schema_details", {}).get("extras", [])
             )
             if isinstance(extras, list):
-                schema_extras = [str(x) for x in extras]
+                schema_extras.extend([str(x) for x in extras])
         except Exception:
-            schema_extras = []
+            pass
 
     payload: Dict[str, Any] = {
         "status": "ok",
@@ -787,7 +793,7 @@ def _emit_json_output(
         "fields": fields,
     }
     if schema_extras:
-        payload["schema_extras"] = sorted(schema_extras)
+        payload["schema_extras"] = sorted(list(set(schema_extras)))
     _safe_echo(json.dumps(payload, default=str))
 
 
@@ -797,7 +803,7 @@ def _emit_table_output(
     atomic_rules: List[RuleSchema],
     results: List[Any],
     skip_map: Dict[str, Dict[str, str]],
-    schema_result_dict: Dict[str, Any] | None,
+    schema_results: List[Dict[str, Any]],
     exec_seconds: float,
 ) -> None:
     rule_map = {str(rule.id): rule for rule in atomic_rules}
@@ -833,7 +839,6 @@ def _emit_table_output(
             rd["rule_type"] = rule.type.value
             rd["column_name"] = rule.get_target_column()
             rd.setdefault("rule_name", rule.name)
-            # Add table name for multi-table support
             if rule.target and rule.target.entities:
                 rd["table_name"] = rule.target.entities[0].table
         if rid in skip_map:
@@ -841,9 +846,14 @@ def _emit_table_output(
             rd["skip_reason"] = skip_map[rid]["skip_reason"]
         table_results.append(rd)
 
-    header_total_records = 0
+    table_records: Dict[str, int] = {}
     for rd in table_results:
-        header_total_records = max(header_total_records, _dataset_total(rd))
+        table_name = rd.get("table_name", "unknown")
+        total = _dataset_total(rd)
+        if total > 0:
+            table_records[table_name] = max(table_records.get(table_name, 0), total)
+
+    header_total_records = sum(table_records.values())
 
     def _calc_failed(res: Dict[str, Any]) -> int:
         if isinstance(res.get("failed_records"), int):
@@ -863,19 +873,11 @@ def _emit_table_output(
         if "total_records" not in rd:
             rd["total_records"] = _dataset_total(rd)
 
-    column_guard: Dict[str, str] = {}
-    if schema_result_dict:
-        execution_plan = schema_result_dict.get("execution_plan") or {}
-        schema_details = execution_plan.get("schema_details") or {}
-        details = schema_details.get("field_results") or []
-        for item in details:
-            col = str(item.get("column"))
-            column_guard[col] = str(item.get("failure_code", "NONE"))
-
-    # Group results by table for multi-table support
     tables_grouped: Dict[str, Dict[str, Dict[str, Any]]] = {}
 
     for rd in table_results:
+        if rd.get("rule_type") == RuleType.SCHEMA.value:
+            continue
         table_name = rd.get("table_name", "unknown")
         if table_name not in tables_grouped:
             tables_grouped[table_name] = {}
@@ -892,10 +894,6 @@ def _emit_table_output(
                 key = "range"
             elif rd.get("rule_type") == RuleType.ENUM.value:
                 key = "enum"
-            elif rd.get("rule_type") == RuleType.REGEX.value:
-                key = "regex"
-            elif rd.get("rule_type") == RuleType.DATE_FORMAT.value:
-                key = "date_format"
             else:
                 key = rd.get("rule_type", "unknown").lower()
 
@@ -909,44 +907,113 @@ def _emit_table_output(
                     }
                 )
 
+    all_columns_by_table: Dict[str, set] = {}
+    for rule in atomic_rules:
+        if rule.target and rule.target.entities:
+            table_name = rule.target.entities[0].table
+            if table_name not in all_columns_by_table:
+                all_columns_by_table[table_name] = set()
+            
+            if rule.type == RuleType.SCHEMA:
+                if rule.parameters:
+                    declared_cols = (rule.parameters.get("columns") or {}).keys()
+                    for col in declared_cols:
+                        all_columns_by_table[table_name].add(str(col))
+            else:
+                column_name = rule.get_target_column()
+                if column_name:
+                    all_columns_by_table[table_name].add(column_name)
+
+    for table_name, columns in all_columns_by_table.items():
+        if table_name not in tables_grouped:
+            tables_grouped[table_name] = {}
+        for column_name in columns:
+            if column_name not in tables_grouped[table_name]:
+                tables_grouped[table_name][column_name] = {
+                    "column": column_name,
+                    "issues": [],
+                }
+
+    schema_rules_map = {
+        str(rule.id): rule for rule in atomic_rules if rule.type == RuleType.SCHEMA
+    }
+    for schema_result in schema_results:
+        rule_id = str(schema_result.get("rule_id", ""))
+        rule = schema_rules_map.get(rule_id)
+        if not rule:
+            continue
+        
+        table_name = rule.get_target_info().get("table")
+        if not table_name or table_name not in tables_grouped:
+            continue
+
+        execution_plan = schema_result.get("execution_plan") or {}
+        schema_details = execution_plan.get("schema_details", {}) or {}
+        details = schema_details.get("field_results", []) or []
+        for item in details:
+            col = str(item.get("column"))
+            if item.get("failure_code") == "FIELD_MISSING":
+                tables_grouped[table_name][col]["issues"].append(
+                    {"check": "missing", "status": "FAILED"}
+                )
+            elif item.get("failure_code") == "TYPE_MISMATCH":
+                tables_grouped[table_name][col]["issues"].append(
+                    {"check": "type", "status": "FAILED"}
+                )
+
     lines: List[str] = []
-    lines.append(f"✓ Checking {source} ({header_total_records:,} records)")
+    lines.append(f"✓ Checking {source}")
 
     total_failed_records = sum(
         int(r.get("failed_records", 0) or 0) for r in table_results
     )
 
-    # Display results grouped by table
     for table_name in sorted(tables_grouped.keys()):
-        if len(tables_grouped) > 1:  # Only show table header for multi-table
-            lines.append(f"\n📋 Table: {table_name}")
+        records = table_records.get(table_name, 0)
+        lines.append(f"\n📋 Table: {table_name} ({records:,} records)")
 
         table_grouped = tables_grouped[table_name]
         for col in sorted(table_grouped.keys()):
             issues = table_grouped[col]["issues"]
-            critical = [i for i in issues if i["status"] in {"FAILED", "ERROR"}]
-            skipped = [i for i in issues if i["status"] == "SKIPPED"]
+            
+            # Consolidate issues to avoid duplicates, prioritizing 'missing'
+            final_issues = []
+            has_missing = any(i.get("check") == "missing" for i in issues)
+            if has_missing:
+                final_issues.append({"check": "missing", "status": "FAILED"})
+            else:
+                final_issues.extend(issues)
+
+            critical = [i for i in final_issues if i["status"] in {"FAILED", "ERROR"}]
+            skipped = [i for i in final_issues if i["status"] == "SKIPPED"]
 
             if not critical and not skipped:
                 lines.append(f"✓ {col}: OK")
             else:
-                # Show critical issues first
+                printed_checks = set()
                 for i in critical:
-                    fr = i.get("failed_records") or 0
-                    if i["status"] == "ERROR":
+                    check_key = i['check']
+                    if check_key in printed_checks: continue
+                    printed_checks.add(check_key)
+
+                    fr = i.get("failed_records", 0)
+                    if i["check"] == "missing":
+                        lines.append(f"✗ {col}: missing (skipped dependent checks)")
+                    elif i["status"] == "ERROR":
                         lines.append(f"✗ {col}: {i['check']} error")
                     else:
                         lines.append(f"✗ {col}: {i['check']} failed ({fr} failures)")
 
-                # Show skipped issues with skip reason
                 for i in skipped:
+                    check_key = i.get("skip_reason")
+                    if check_key in printed_checks: continue
+                    printed_checks.add(check_key)
+
                     skip_reason = i.get("skip_reason", "unknown reason")
                     if skip_reason == "FIELD_MISSING":
                         lines.append(f"✗ {col}: missing (skipped dependent checks)")
                     elif skip_reason == "TYPE_MISMATCH":
-                        lines.append(
-                            f"✗ {col}: type mismatch (skipped dependent checks)"
-                        )
+                        lines.append(f"✗ {col}: type mismatch (skipped dependent checks)")
                     else:
                         lines.append(f"✗ {col}: {i['check']} skipped ({skip_reason})")
 
@@ -1034,8 +1101,6 @@ def schema_command(
         source_config = SourceParser().parse_source(connection_string)
         rules_payload = _read_rules_payload(rules_file)
 
-        # If the rules file uses a multi-table format, signal this to the DataValidator
-        # so that it skips its single-table target completion logic.
         is_multi_table_rules = "rules" not in rules_payload
         if is_multi_table_rules:
             source_config.parameters["is_multi_table"] = True
@@ -1064,11 +1129,11 @@ def schema_command(
         )
         results, exec_seconds = _run_validation(validator)
 
-        schema_result_dict: Dict[str, Any] | None = _extract_schema_result_dict(
+        schema_results = _extract_schema_results(
             atomic_rules=atomic_rules, results=results
         )
         skip_map = _compute_skip_map(
-            atomic_rules=atomic_rules, schema_result_dict=schema_result_dict
+            atomic_rules=atomic_rules, schema_results=schema_results
         )
 
         if output.lower() == "json":
@@ -1078,7 +1143,7 @@ def schema_command(
                 atomic_rules=atomic_rules,
                 results=results,
                 skip_map=skip_map,
-                schema_result_dict=schema_result_dict,
+                schema_results=schema_results,
                 exec_seconds=exec_seconds,
             )
         else:
@@ -1087,7 +1152,7 @@ def schema_command(
                 atomic_rules=atomic_rules,
                 results=results,
                 skip_map=skip_map,
-                schema_result_dict=schema_result_dict,
+                schema_results=schema_results,
                 exec_seconds=exec_seconds,
             )
 

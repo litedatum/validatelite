@@ -788,21 +788,21 @@ class QueryExecutor:
             standardized_result = []
             for col in result:
                 # Different database dialects may use different key names
-                name = col.get("Field", col.get("name", col.get("column_name")))
-                if name is None:
-                    # If column name not found, try to use the first value as column
-                    # name
-                    if col and isinstance(col, dict) and len(col) > 0:
-                        name = next(iter(col.values()))
-                    else:
-                        name = str(col)
+                name = col.get("Field") or col.get("name") or col.get("column_name")
+                type_ = col.get("Type") or col.get("data_type") or col.get("type")
+
+                if not name:
+                    # If column name not found, skip this column with a warning
+                    self.logger.warning(f"Could not determine column name from result: {col}")
+                    continue
+                
+                if not type_:
+                    type_ = "unknown"
 
                 # Create standardized column info
                 std_col = {
-                    "name": name,  # Standardized column name key
-                    "type": col.get(
-                        "Type", col.get("data_type", col.get("type", "unknown"))
-                    ),
+                    "name": name,
+                    "type": type_,
                     "nullable": (
                         col.get("Null", col.get("is_nullable", "YES")).upper() == "YES"
                     ),
