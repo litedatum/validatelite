@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 
-def main():
+def main() -> None:
     """Run tests with quiet logging configuration."""
     # Get the project root directory
     project_root = Path(__file__).parent.parent

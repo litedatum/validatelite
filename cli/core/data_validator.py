@@ -401,7 +401,7 @@ class DataValidator:
             raise ValueError(f"Failed to create multi-table SQLite database: {str(e)}")
 
     async def _load_multi_table_excel_to_sqlite(
-        self, engine, temp_db_path: str
+        self, engine: Any, temp_db_path: str
     ) -> None:
         """
         Load multiple sheets from Excel file into SQLite database.

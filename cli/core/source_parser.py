@@ -121,7 +121,7 @@ class SourceParser:
             for sheet_name in excel_file.sheet_names:
                 # Read first few rows to get column names
                 df = pd.read_excel(file_path, sheet_name=sheet_name, nrows=0)
-                sheets_info[sheet_name] = list(df.columns)
+                sheets_info[str(sheet_name)] = list(df.columns)
 
             return sheets_info
         except Exception as e:

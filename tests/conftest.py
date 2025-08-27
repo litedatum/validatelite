@@ -16,16 +16,17 @@ import pytest_asyncio
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared.config.loader import load_config
+from shared.config.logging_config import LoggingConfig
 
 # Import the database connection management module.
 from shared.database.connection import close_all_engines
 
 # Load test-specific logging configuration
 try:
-    test_logging_config = load_config("logging.test.toml")
-    if test_logging_config:
+    test_logging_config: LoggingConfig = load_config("logging.test.toml", LoggingConfig)
+    if test_logging_config and test_logging_config.module_levels:
         # Apply test logging configuration
-        for module, level in test_logging_config.get("module_levels", {}).items():
+        for module, level in test_logging_config.module_levels.items():
             _logging.getLogger(module).setLevel(getattr(_logging, level.upper()))
 except Exception:
     # Fallback to default configuration if test config not found

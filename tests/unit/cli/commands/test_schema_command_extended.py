@@ -252,7 +252,9 @@ class TestSchemaPrioritizationAndOutputs:
 
         # Patch DataValidator.validate to return our results
         class DummyValidator:
-            def __init__(self, source_config, rules, core_config, cli_config):
+            def __init__(
+                self, source_config: Any, rules: Any, core_config: Any, cli_config: Any
+            ):
                 # Accept all required parameters but don't use them
                 pass
 

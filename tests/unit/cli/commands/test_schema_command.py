@@ -94,7 +94,9 @@ class TestSchemaCommandSkeleton:
         )
 
         class DummyValidator:
-            def __init__(self, source_config, rules, core_config, cli_config) -> None:
+            def __init__(
+                self, source_config: Any, rules: Any, core_config: Any, cli_config: Any
+            ) -> None:
                 # Accept constructor arguments but ignore them
                 pass
 
