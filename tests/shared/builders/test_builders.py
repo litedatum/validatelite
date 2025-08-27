@@ -211,6 +211,7 @@ class TestDataBuilder:
             self._username = "test_user"
             self._password = "test_pass"
             self._db_schema = "test_schema"
+            self._available_tables: Optional[List[str]] = None
             self._file_path: Optional[str] = None
             self._parameters: Dict[str, Any] = {}
 
@@ -234,6 +235,12 @@ class TestDataBuilder:
 
         def with_database(self, db_name: str) -> "TestDataBuilder.ConnectionBuilder":
             self._db_name = db_name
+            return self
+
+        def with_available_tables(
+            self, table_name: str
+        ) -> "TestDataBuilder.ConnectionBuilder":
+            self._available_tables = [table_name]
             return self
 
         def with_credentials(
@@ -275,6 +282,7 @@ class TestDataBuilder:
                 db_schema=self._db_schema,
                 file_path=self._file_path,
                 parameters=self._parameters,
+                available_tables=self._available_tables,
                 capabilities=DataSourceCapability(supports_sql=True),
                 cross_db_settings=None,
             )

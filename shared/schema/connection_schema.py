@@ -7,7 +7,7 @@ Supports current version's database connections, reserves hooks for
 cross-database features.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
 from pydantic import Field, model_validator
@@ -33,6 +33,9 @@ class ConnectionSchema(ConnectionBase):
     # Add unique identifier for connection management
     id: UUID = Field(
         default_factory=uuid4, description="Unique identifier for the connection"
+    )
+    available_tables: Optional[List[str]] = Field(
+        default=None, description="List of available tables for file-based sources"
     )
 
     # ==================== Convenient methods ====================

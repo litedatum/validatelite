@@ -162,10 +162,16 @@ The project includes comprehensive tests to ensure reliability. If you encounter
 # Run all tests with coverage
 pytest -vv --cov
 
+# Run tests quietly (suppress debug messages)
+python scripts/run_tests_quiet.py --cov
+
 # Run specific test categories
 pytest tests/unit/ -v          # Unit tests only
 pytest tests/integration/ -v   # Integration tests
 pytest tests/e2e/ -v           # End-to-end tests
+
+# Run specific tests quietly
+python scripts/run_tests_quiet.py tests/unit/ -v
 
 # Code quality checks
 pre-commit run --all-files

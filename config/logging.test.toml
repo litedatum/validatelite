@@ -1,0 +1,37 @@
+# Test Environment Logging Configuration
+
+# Global log level: Set to WARNING to suppress DEBUG and INFO messages
+level = "WARNING"
+
+# Log message format
+format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Enable logging to file (disabled for tests to keep output clean)
+to_file = false
+
+# Module-specific log levels for testing
+[module_levels]
+# Core modules - set to WARNING to reduce noise
+"shared.database.connection" = "WARNING"
+"shared.database.query_executor" = "WARNING"
+"cli.commands.check" = "WARNING"
+"cli.core.data_validator" = "WARNING"
+"cli.core.source_parser" = "WARNING"
+"cli.core.rule_parser" = "WARNING"
+"rule_engine" = "WARNING"
+"core.engine.rule_engine" = "WARNING"
+
+# Third-party modules - set to ERROR to suppress all debug info
+"aiosqlite" = "ERROR"
+"sqlalchemy" = "ERROR"
+"sqlalchemy.engine" = "ERROR"
+"sqlalchemy.pool" = "ERROR"
+"sqlalchemy.dialects" = "ERROR"
+"pydantic" = "WARNING"
+"toml" = "WARNING"
+"werkzeug" = "WARNING"
+"urllib3.connectionpool" = "WARNING"
+
+# Keep only critical errors visible
+"asyncio" = "WARNING"
+"pytest" = "WARNING"

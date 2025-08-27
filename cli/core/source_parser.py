@@ -8,7 +8,7 @@ Supports files (CSV, Excel, JSON) and database URLs.
 import re
 import urllib.parse
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from uuid import uuid4
 
 from cli.exceptions import ValidationError
@@ -94,6 +94,62 @@ class SourceParser:
         except Exception as e:
             self.logger.error(f"{str(e)}")
             raise
+
+    def get_excel_sheets(self, file_path: str) -> Dict[str, List[str]]:
+        """
+        Get sheet names from Excel file.
+
+        Args:
+            file_path: Path to Excel file
+
+        Returns:
+            Dict with sheet names as keys and column lists as values
+
+        Raises:
+            ImportError: If pandas/openpyxl not available
+            FileNotFoundError: If file not found
+        """
+        try:
+            import pandas as pd
+        except ImportError:
+            raise ImportError("pandas is required to read Excel files")
+
+        try:
+            excel_file = pd.ExcelFile(file_path)
+            sheets_info = {}
+
+            for sheet_name in excel_file.sheet_names:
+                # Read first few rows to get column names
+                df = pd.read_excel(file_path, sheet_name=sheet_name, nrows=0)
+                sheets_info[str(sheet_name)] = list(df.columns)
+
+            return sheets_info
+        except Exception as e:
+            self.logger.error(f"Error reading Excel file {file_path}: {str(e)}")
+            raise
+
+    def is_multi_table_excel(self, file_path: str) -> bool:
+        """
+        Check if Excel file contains multiple sheets that could represent
+          multiple tables.
+
+        Args:
+            file_path: Path to Excel file
+
+        Returns:
+            True if file has multiple sheets, False otherwise
+        """
+        try:
+            import pandas as pd
+
+            excel_file = pd.ExcelFile(file_path)
+            return len(excel_file.sheet_names) > 1
+        except ImportError:
+            # If pandas not available, assume single table
+            return False
+        except Exception:
+            # If any error occurs, assume single table
+            return False
 
     def _is_database_url(self, source: str) -> bool:
         """Check if source is a database URL"""
@@ -182,47 +238,66 @@ class SourceParser:
 
         path = Path(file_path)
 
-        # Check if file exists
         if not path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
         if not path.is_file():
             raise ValidationError(f"Path is not a file: {file_path}")
 
-        # Determine file type
         file_ext = path.suffix.lower()
         conn_type = self.file_extensions.get(file_ext)
 
         if not conn_type:
-            # Try to infer from content or use CSV as default
             conn_type = ConnectionType.CSV
             self.logger.warning(
                 f"Unknown file extension {file_ext}, assuming CSV format"
             )
 
+        is_multi_table = False
+        sheets_info = {}
+        if conn_type == ConnectionType.EXCEL:
+            try:
+                sheets_info = self.get_excel_sheets(file_path)
+                if len(sheets_info) > 1:
+                    is_multi_table = True
+                    self.logger.info(
+                        f"Multi-table Excel file detected with {len(sheets_info)} "
+                        "sheets: {list(sheets_info.keys())}"
+                    )
+            except Exception as e:
+                self.logger.warning(
+                    f"Could not read Excel sheets, treating as single-table: {str(e)}"
+                )
+                is_multi_table = False
+
+        parameters = {
+            "filename": path.name,
+            "file_size": path.stat().st_size,
+            "encoding": "utf-8",
+        }
+
+        if is_multi_table and sheets_info:
+            parameters["is_multi_table"] = True
+            parameters["sheets"] = sheets_info
+            available_tables = list(sheets_info.keys())
+        else:
+            parameters["is_multi_table"] = False
+            available_tables = [path.stem]
+
         return ConnectionSchema(
             name=f"file_connection_{uuid4().hex[:8]}",
-            description=f"File connection: {path.name}",
+            description=f"File connection: {path.name}"
+            + (" (multi-table)" if is_multi_table else ""),
             connection_type=conn_type,
-            host=None,
-            port=None,
-            db_name=None,
-            username=None,
-            password=None,
-            db_schema=None,
             file_path=str(path.absolute()),
-            parameters={
-                "filename": path.name,
-                "file_size": path.stat().st_size,
-                "encoding": "utf-8",  # Default encoding
-            },
+            parameters=parameters,
+            available_tables=available_tables,
             capabilities=DataSourceCapability(
                 supports_sql=False,
                 supports_batch_export=True,
-                max_export_rows=100000,
-                estimated_throughput=5000,
+                max_export_rows=100000 if not is_multi_table else 50000,
+                estimated_throughput=5000 if not is_multi_table else 2000,
             ),
-            cross_db_settings=None,
         )
 
     def _detect_database_type(self, url: str) -> ConnectionType:
@@ -298,14 +373,9 @@ class SourceParser:
             name=f"sqlite_connection_{uuid4().hex[:8]}",
             description=f"SQLite connection: {Path(file_path).name}",
             connection_type=ConnectionType.SQLITE,
-            host=None,
-            port=None,
-            db_name=None,
-            username=None,
-            password=None,
-            db_schema=None,
             file_path=file_path,
             parameters=parameters,
+            available_tables=[table] if table else [],
             capabilities=DataSourceCapability(
                 supports_sql=True,
                 supports_batch_export=True,
