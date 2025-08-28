@@ -1,7 +1,7 @@
 """
 Check Command Implementation
 
-The core `vlite-cli check` command for data quality validation.
+The core `vlite check` command for data quality validation.
 Supports smart source identification, rule parsing, and formatted output.
 """
 
@@ -38,7 +38,13 @@ logger = get_logger(__name__)
 
 
 @click.command("check")
-@click.argument("source", required=True)
+@click.option(
+    "--conn",
+    "connection_string",
+    required=True,
+    help="Database connection string or file path",
+)
+@click.option("--table", "table_name", required=True, help="Table name to validate")
 @click.option(
     "--rule",
     "rules",
@@ -59,7 +65,8 @@ logger = get_logger(__name__)
     help="Show detailed information and failure samples",
 )
 def check_command(
-    source: str,
+    connection_string: str,
+    table_name: str,
     rules: Tuple[str, ...],
     rules_file: Optional[str],
     quiet: bool,
@@ -68,18 +75,22 @@ def check_command(
     """
     Check data quality for the given source.
 
+    NEW FORMAT:
+        vlite check --conn <connection> --table <table_name> [options]
+
     SOURCE can be:
     - File path: users.csv, data.xlsx, records.json
-    - Database URL: mysql://user:pass@host/db.table
+    - Database URL: mysql://user:pass@host/db
     - SQLite file: sqlite:///path/to/file.db
 
     Examples:
-        vlite-cli check users.csv --rule "not_null(id)"
-        vlite-cli check mysql://user:pass@host/db.users --rules validation.json
+        vlite check --conn users.csv --table users --rule "not_null(id)"
+        vlite check --conn mysql://user:pass@host/db \
+            --table users --rules validation.json
     """
     # Record start time
     start_time = now()
-    logger.info(f"Starting data quality check for: {source}")
+    logger.info(f"Starting data quality check for: {connection_string}")
 
     # Create exception handler
     exception_handler = CliExceptionHandler(verbose=verbose)
@@ -111,23 +122,23 @@ def check_command(
                 )
 
             # Parse source
-            safe_echo(f"🔍 Analyzing source: {source}")
+            safe_echo(f"🔍 Analyzing source: {connection_string}")
 
             # Proactively verify that a provided file is not empty – this avoids
             # kicking off heavy validation logic only to discover the file is
             # useless.  The modern test-suite expects a graceful early-exit with a
             # clear error message in such a scenario.
-            potential_path = Path(source)
+            potential_path = Path(connection_string)
             if potential_path.exists() and potential_path.is_file():
                 if potential_path.stat().st_size == 0:
                     raise click.ClickException(
-                        f"Error: Source file '{source}' is empty "
+                        f"Error: Source file '{connection_string}' is empty "
                         "– nothing to validate."
                     )
 
             # Parse source config - this may raise Schema creation error
             # (OperationError)
-            source_config = source_parser.parse_source(source)
+            source_config = source_parser.parse_source(connection_string, table_name)
 
             # Parse rules - this may raise Schema creation error
             # (RuleExecutionError)
@@ -205,7 +216,7 @@ def check_command(
             output_formatter.display_results(
                 results=results_dicts,
                 rules=rule_configs,  # Pass as objects, not dicts
-                source=source,
+                source=connection_string,
                 execution_time=execution_time,
                 total_rules=len(rule_configs),
             )
@@ -248,7 +259,7 @@ def check_command(
             output_formatter.display_results(
                 results=results_dicts,
                 rules=rule_configs,  # Pass as objects, not dicts
-                source=source,
+                source=connection_string,
                 execution_time=execution_time,
                 total_rules=len(rule_configs),
             )
@@ -289,17 +300,17 @@ SUPPORTED RULE TYPES:
   enum(column,value1,value2...) - Check allowed enum values
 
 EXAMPLES:
-  vlite-cli check users.csv --rule "not_null(id)"
-  vlite-cli check users.csv --rule "length(name,2,50)"
-  vlite-cli check users.csv --rule "unique(email)"
-  vlite-cli check users.csv --rule "range(age,18,65)"
-  vlite-cli check users.csv --rule "regex(email,^[\\w.-]+@[\\w.-]+\\.[a-zA-Z]{2,}$)"
+  vlite check users.csv --rule "not_null(id)"
+  vlite check users.csv --rule "length(name,2,50)"
+  vlite check users.csv --rule "unique(email)"
+  vlite check users.csv --rule "range(age,18,65)"
+  vlite check users.csv --rule "regex(email,^[\\w.-]+@[\\w.-]+\\.[a-zA-Z]{2,}$)"
 
 MULTIPLE RULES:
-  vlite-cli check users.csv --rule "not_null(id)" --rule "unique(email)"
+  vlite check users.csv --rule "not_null(id)" --rule "unique(email)"
 
 RULES FILE:
-  vlite-cli check users.csv --rules validation.json
+  vlite check users.csv --rules validation.json
 
   Example validation.json:
   {

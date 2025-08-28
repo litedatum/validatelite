@@ -40,7 +40,7 @@ class TestCliErrorHandling:
         # Arrange
         sample_data_file = tmp_path / "sample-data.csv"
         sample_data_file.write_text("id,name\n1,Alice")
-        command = ["check", str(sample_data_file)]
+        command = ["check", "--conn", str(sample_data_file), "--table", "sample-data"]
 
         # Act
         result = run_cli_command(command)
@@ -56,7 +56,15 @@ class TestCliErrorHandling:
         # Arrange
         sample_data_file = tmp_path / "sample-data.csv"
         sample_data_file.write_text("id,name\n1,Alice")
-        command = ["check", str(sample_data_file), "--rule", "invalid_rule(name)"]
+        command = [
+            "check",
+            "--conn",
+            str(sample_data_file),
+            "--table",
+            "sample-data",
+            "--rule",
+            "invalid_rule(name)",
+        ]
 
         # Act
         result = run_cli_command(command)
@@ -70,7 +78,15 @@ class TestCliErrorHandling:
         Tests that the `check` command fails with a nonexistent source file.
         """
         # Arrange
-        command = ["check", "nonexistent.csv", "--rule", "not_null(name)"]
+        command = [
+            "check",
+            "--conn",
+            "nonexistent.csv",
+            "--table",
+            "nonexistent",
+            "--rule",
+            "not_null(name)",
+        ]
 
         # Act
         result = run_cli_command(command)
@@ -86,7 +102,15 @@ class TestCliErrorHandling:
         # Arrange
         empty_file = tmp_path / "empty.csv"
         empty_file.write_text("")
-        command = ["check", str(empty_file), "--rule", "not_null(name)"]
+        command = [
+            "check",
+            "--conn",
+            str(empty_file),
+            "--table",
+            "empty",
+            "--rule",
+            "not_null(name)",
+        ]
 
         # Act
         result = run_cli_command(command)

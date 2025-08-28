@@ -11,6 +11,7 @@ from click.testing import CliRunner
 
 from cli.app import cli_app
 from cli.core.data_validator import ExecutionResultSchema
+from shared.enums.connection_types import ConnectionType
 
 
 def _write_tmp_file(tmp_path: Path, name: str, content: str) -> str:
@@ -38,17 +39,22 @@ class TestSchemaCommandSkeleton:
         rules_obj: dict[str, list[dict[str, Any]]] = {"rules": []}
         rules_path = _write_tmp_file(tmp_path, "schema.json", json.dumps(rules_obj))
 
-        result = runner.invoke(cli_app, ["schema", data_path, "--rules", rules_path])
+        result = runner.invoke(
+            cli_app, ["schema", "--conn", data_path, "--rules", rules_path]
+        )
         assert result.exit_code == 0
         assert "Checking" in result.output
 
     def test_output_json_mode(self, tmp_path: Path) -> None:
         runner = CliRunner()
         data_path = _write_tmp_file(tmp_path, "data.csv", "id\n1\n")
-        rules_path = _write_tmp_file(tmp_path, "schema.json", json.dumps({"rules": []}))
+        rules_path = _write_tmp_file(
+            tmp_path, "schema.json", json.dumps({"user": {"rules": []}})
+        )
 
         result = runner.invoke(
-            cli_app, ["schema", data_path, "--rules", rules_path, "--output", "json"]
+            cli_app,
+            ["schema", "--conn", data_path, "--rules", rules_path, "--output", "json"],
         )
         assert result.exit_code == 0
         payload = json.loads(result.output)
@@ -72,12 +78,28 @@ class TestSchemaCommandSkeleton:
             .build()
         )
 
+        # Create a mock ConnectionSchema for testing
+        mock_source_config = (
+            test_builders.TestDataBuilder.connection()
+            .with_type(ConnectionType.CSV)
+            .with_database("test_db")
+            .with_available_tables("test_table")
+            .with_parameters({})
+            .build()
+        )
+
         monkeypatch.setattr(
-            "cli.commands.schema._decompose_to_atomic_rules",
-            lambda payload: [schema_rule],
+            "cli.commands.schema._decompose_schema_payload",
+            lambda payload, source_config: [schema_rule],
         )
 
         class DummyValidator:
+            def __init__(
+                self, source_config: Any, rules: Any, core_config: Any, cli_config: Any
+            ) -> None:
+                # Accept constructor arguments but ignore them
+                pass
+
             async def validate(self) -> list[ExecutionResultSchema]:
                 # Return no results to simulate missing schema details
                 return []
@@ -89,11 +111,12 @@ class TestSchemaCommandSkeleton:
         rules_path = _write_tmp_file(
             tmp_path,
             "schema.json",
-            json.dumps({"rules": [{"field": "id", "type": "integer"}]}),
+            json.dumps({"data": {"rules": [{"field": "id", "type": "integer"}]}}),
         )
 
         result = runner.invoke(
-            cli_app, ["schema", data_path, "--rules", rules_path, "--output", "json"]
+            cli_app,
+            ["schema", "--conn", data_path, "--rules", rules_path, "--output", "json"],
         )
         # No failures but explicit -- in this setup lack of results implies exit 0
         assert result.exit_code == 0
@@ -116,6 +139,7 @@ class TestSchemaCommandSkeleton:
             cli_app,
             [
                 "schema",
+                "--conn",
                 data_path,
                 "--rules",
                 rules_path,
@@ -131,7 +155,7 @@ class TestSchemaCommandSkeleton:
         bad_rules_path = _write_tmp_file(tmp_path, "bad.json", "{invalid json}")
 
         result = runner.invoke(
-            cli_app, ["schema", data_path, "--rules", bad_rules_path]
+            cli_app, ["schema", "--conn", data_path, "--rules", bad_rules_path]
         )
 
         # Click usage error exit code is >= 2
@@ -149,29 +173,33 @@ class TestSchemaCommandValidation:
         runner = CliRunner()
         data_path = self._write_tmp_file(tmp_path, "data.csv", "id\n1\n")
         rules = {
-            "table": "users",
-            "rules": [
-                {"field": "id", "type": "integer", "required": True},
-            ],
+            "users": {
+                "rules": [
+                    {"field": "id", "type": "integer", "required": True},
+                ]
+            }
         }
         rules_path = self._write_tmp_file(tmp_path, "schema.json", json.dumps(rules))
 
         result = runner.invoke(
-            cli_app, ["schema", data_path, "--rules", rules_path, "--output", "json"]
+            cli_app,
+            ["schema", "--conn", data_path, "--rules", rules_path, "--output", "json"],
         )
         # exit code from skeleton remains success
         assert result.exit_code == 0
-        # warning emitted to stderr
-        assert "table' is ignored" in (result.stderr or "")
+        # Since multi-table has been supported,so no warning emitted to stderr
+        # assert "table' is ignored" in (result.stderr or "")
 
     def test_rules_must_be_array(self, tmp_path: Path) -> None:
         runner = CliRunner()
         data_path = self._write_tmp_file(tmp_path, "data.csv", "id\n1\n")
         rules_path = self._write_tmp_file(tmp_path, "schema.json", json.dumps({}))
 
-        result = runner.invoke(cli_app, ["schema", data_path, "--rules", rules_path])
+        result = runner.invoke(
+            cli_app, ["schema", "--conn", data_path, "--rules", rules_path]
+        )
         assert result.exit_code >= 2
-        assert "must be an array" in result.output
+        assert "must have a 'rules' array" in result.output
 
     def test_rules_item_requires_field(self, tmp_path: Path) -> None:
         runner = CliRunner()
@@ -179,7 +207,9 @@ class TestSchemaCommandValidation:
         bad = {"rules": [{"type": "integer"}]}
         rules_path = self._write_tmp_file(tmp_path, "schema.json", json.dumps(bad))
 
-        result = runner.invoke(cli_app, ["schema", data_path, "--rules", rules_path])
+        result = runner.invoke(
+            cli_app, ["schema", "--conn", data_path, "--rules", rules_path]
+        )
         assert result.exit_code >= 2
         assert "field must be a non-empty string" in result.output
 
@@ -189,7 +219,9 @@ class TestSchemaCommandValidation:
         bad = {"rules": [{"field": "id", "type": "number"}]}
         rules_path = self._write_tmp_file(tmp_path, "schema.json", json.dumps(bad))
 
-        result = runner.invoke(cli_app, ["schema", data_path, "--rules", rules_path])
+        result = runner.invoke(
+            cli_app, ["schema", "--conn", data_path, "--rules", rules_path]
+        )
         assert result.exit_code >= 2
         assert "type 'number' is not supported" in result.output
 
@@ -199,7 +231,9 @@ class TestSchemaCommandValidation:
         bad = {"rules": [{"field": "id", "required": "yes"}]}
         rules_path = self._write_tmp_file(tmp_path, "schema.json", json.dumps(bad))
 
-        result = runner.invoke(cli_app, ["schema", data_path, "--rules", rules_path])
+        result = runner.invoke(
+            cli_app, ["schema", "--conn", data_path, "--rules", rules_path]
+        )
         assert result.exit_code >= 2
         assert "required must be a boolean" in result.output
 
@@ -209,7 +243,9 @@ class TestSchemaCommandValidation:
         bad = {"rules": [{"field": "flag", "enum": "01"}]}
         rules_path = self._write_tmp_file(tmp_path, "schema.json", json.dumps(bad))
 
-        result = runner.invoke(cli_app, ["schema", data_path, "--rules", rules_path])
+        result = runner.invoke(
+            cli_app, ["schema", "--conn", data_path, "--rules", rules_path]
+        )
         assert result.exit_code >= 2
         assert "enum must be an array" in result.output
 
@@ -219,6 +255,8 @@ class TestSchemaCommandValidation:
         bad = {"rules": [{"field": "age", "type": "integer", "min": "0"}]}
         rules_path = self._write_tmp_file(tmp_path, "schema.json", json.dumps(bad))
 
-        result = runner.invoke(cli_app, ["schema", data_path, "--rules", rules_path])
+        result = runner.invoke(
+            cli_app, ["schema", "--conn", data_path, "--rules", rules_path]
+        )
         assert result.exit_code >= 2
         assert "min must be numeric" in result.output

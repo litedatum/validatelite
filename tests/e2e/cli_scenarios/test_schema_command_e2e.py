@@ -1,5 +1,5 @@
 """
-E2E: vlite-cli schema on databases and table/json outputs
+E2E: vlite schema on databases and table/json outputs
 
 Scenarios derived from notes/测试方案-数据库SchemaDrift与CLI-Schema命令.md:
 - Happy path on DB URL with table/json outputs
@@ -29,9 +29,9 @@ def _db_urls() -> list[str]:
     urls: list[str] = []
     available = set(get_available_databases())
     if "mysql" in available:
-        urls.append(get_mysql_test_url() + ".customers")
+        urls.append(get_mysql_test_url())
     if "postgresql" in available:
-        urls.append(get_postgresql_test_url() + ".customers")
+        urls.append(get_postgresql_test_url())
     return urls
 
 
@@ -59,26 +59,44 @@ def _param_db_urls() -> list[object]:
 def test_happy_path_table_and_json(tmp_path: Path, db_url: str) -> None:
     # Schema baseline + a couple atomic rules
     rules = {
-        "rules": [
-            {"field": "id", "type": "integer", "required": True},
-            {"field": "email", "type": "string"},
-            {"field": "age", "type": "integer", "min": 0, "max": 150},
-        ],
-        "strict_mode": False,
-        "case_insensitive": True,
+        "customers": {
+            "rules": [
+                {"field": "id", "type": "integer", "required": True},
+                {"field": "email", "type": "string"},
+                {"field": "age", "type": "integer", "min": 0, "max": 150},
+            ],
+            "strict_mode": False,
+            "case_insensitive": True,
+        }
     }
     rules_file = _write_rules(tmp_path, rules)
 
     # table output
     r1 = E2ETestUtils.run_cli_command(
-        ["schema", db_url, "--rules", rules_file, "--output", "table"]
+        [
+            "schema",
+            "--conn",
+            db_url,
+            "--rules",
+            rules_file,
+            "--output",
+            "table",
+        ]
     )
     assert r1.returncode in {0, 1}
     assert "Checking" in r1.stdout
 
     # json output
     r2 = E2ETestUtils.run_cli_command(
-        ["schema", db_url, "--rules", rules_file, "--output", "json"]
+        [
+            "schema",
+            "--conn",
+            db_url,
+            "--rules",
+            rules_file,
+            "--output",
+            "json",
+        ]
     )
     assert r2.returncode in {0, 1}
     try:
@@ -97,21 +115,31 @@ def test_happy_path_table_and_json(tmp_path: Path, db_url: str) -> None:
 def test_drift_missing_and_type_mismatch(tmp_path: Path, db_url: str) -> None:
     # Declare a missing column and mismatched type to trigger SKIPPED in JSON for dependent rules
     rules = {
-        "rules": [
-            {"field": "email", "type": "integer", "required": True},  # mismatch
-            {
-                "field": "status",
-                "type": "string",
-                "enum": ["active", "inactive"],
-            },  # missing
-        ],
-        "strict_mode": False,
-        "case_insensitive": True,
+        "customers": {
+            "rules": [
+                {"field": "email", "type": "integer", "required": True},  # mismatch
+                {
+                    "field": "status",
+                    "type": "string",
+                    "enum": ["active", "inactive"],
+                },  # missing
+            ],
+            "strict_mode": False,
+            "case_insensitive": True,
+        }
     }
     rules_file = _write_rules(tmp_path, rules)
 
     r = E2ETestUtils.run_cli_command(
-        ["schema", db_url, "--rules", rules_file, "--output", "json"]
+        [
+            "schema",
+            "--conn",
+            db_url,
+            "--rules",
+            rules_file,
+            "--output",
+            "json",
+        ]
     )
     assert r.returncode in {1, 0}
     try:
@@ -132,16 +160,26 @@ def test_drift_missing_and_type_mismatch(tmp_path: Path, db_url: str) -> None:
 @pytest.mark.parametrize("db_url", _param_db_urls())
 def test_strict_mode_extras_json(tmp_path: Path, db_url: str) -> None:
     rules = {
-        "rules": [
-            {"field": "id", "type": "integer"},
-        ],
-        "strict_mode": True,
-        "case_insensitive": True,
+        "customers": {
+            "rules": [
+                {"field": "id", "type": "integer"},
+            ],
+            "strict_mode": True,
+            "case_insensitive": True,
+        }
     }
     rules_file = _write_rules(tmp_path, rules)
 
     r = E2ETestUtils.run_cli_command(
-        ["schema", db_url, "--rules", rules_file, "--output", "json"]
+        [
+            "schema",
+            "--conn",
+            db_url,
+            "--rules",
+            rules_file,
+            "--output",
+            "json",
+        ]
     )
     try:
         payload = json.loads(r.stdout)
@@ -161,7 +199,15 @@ def test_empty_rules_minimal_payload(tmp_path: Path) -> None:
     rules_file = _write_rules(tmp_path, {"rules": []})
 
     r = E2ETestUtils.run_cli_command(
-        ["schema", str(data_file), "--rules", rules_file, "--output", "json"]
+        [
+            "schema",
+            "--conn",
+            str(data_file),
+            "--rules",
+            rules_file,
+            "--output",
+            "json",
+        ]
     )
     assert r.returncode == 0
     payload = json.loads(r.stdout)

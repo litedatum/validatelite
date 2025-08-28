@@ -19,7 +19,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - None
 
-## [0.4.0] - 2025-01-27
+## [0.4.2] - 2025-08-27
+
+### Added
+- feat(cli): refactor check command interface from positional arguments to `--conn` and `--table` options
+- feat(cli): add comprehensive test coverage for new CLI interface functionality
+- feat(cli): support explicit table name specification independent of database URL
+- feat(schema): add comprehensive multi-table support for schema validation
+- feat(schema): support multi-table rules format with table-level configuration options
+- feat(schema): add Excel multi-sheet file support as data source
+- feat(schema): implement table-grouped output display for multi-table validation results
+- feat(schema): add table-level options support (strict_mode, case_insensitive)
+- feat(tests): add comprehensive multi-table functionality test coverage
+- feat(tests): add multi-table Excel file validation test scenarios
+
+### Changed
+- **BREAKING CHANGE**: CLI interface changed from `vlite check <source>` to `vlite check --conn <connection> --table <table_name>`
+- refactor(cli): update SourceParser to accept optional table_name parameter
+- refactor(cli): modify check command to pass table_name to SourceParser.parse_source()
+- refactor(tests): update all existing CLI tests to use new interface format
+- refactor(tests): add new test cases specifically for table name parameter validation
+- refactor(schema): enhance schema command to support both single-table and multi-table formats
+- refactor(schema): improve output formatting with table-grouped results display
+- refactor(schema): enhance rule decomposition logic for multi-table support
+- refactor(data-validator): improve multi-table detection and processing capabilities
+- refactor(schema): preserve field order from initial JSON definition instead of alphabetical sorting
+- refactor(schema): consolidate field validation information display to single line per field
+
+### Fixed
+- fix(cli): resolve issue where `--table` parameter was not correctly passed to backend
+- fix(cli): ensure table name from `--table` option takes precedence over table name in database URL
+- fix(tests): update regression tests to use new CLI interface format
+- fix(tests): resolve test failures caused by interface changes
+- fix(schema): resolve multi-table rules validation and type checking issues
+- fix(schema): improve table name detection and validation in multi-table scenarios
+- fix(schema): enhance error handling for multi-table validation workflows
+- fix(schema): ensure schema-only rule fields are not omitted from validation results
+- fix(schema): properly display skip conventions for non-existent columns (FIELD_MISSING/TYPE_MISMATCH)
+
+### Removed
+- **BREAKING CHANGE**: remove backward compatibility for old positional argument interface
+- remove(cli): eliminate support for `<source>` positional argument in check command
+
+## [0.4.0] - 2025-08-14
 
 ### Added
 - feat(cli): add `schema` command skeleton
@@ -33,7 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - tests(cli): comprehensive unit tests for `schema` command covering argument parsing, rules file validation, decomposition/mapping, aggregation priority, output formats (table/json), and exit codes (AC satisfied)
  - tests(core): unit tests for `SCHEMA` rule covering normal/edge/error cases, strict type checks, and mypy compliance
 - tests(integration): database schema drift tests for MySQL and PostgreSQL (existence, type consistency, strict mode extras, case-insensitive)
-- tests(e2e): end-to-end `vlite-cli schema` scenarios on database URLs covering happy path, drift (FIELD_MISSING/TYPE_MISMATCH), strict extras, empty rules minimal payload; JSON and table outputs
+- tests(e2e): end-to-end `vlite schema` scenarios on database URLs covering happy path, drift (FIELD_MISSING/TYPE_MISMATCH), strict extras, empty rules minimal payload; JSON and table outputs
 
 ### Changed
 - docs: update README and USAGE with schema command overview and detailed usage

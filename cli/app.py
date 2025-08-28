@@ -2,7 +2,7 @@
 CLI Application Entry Point
 
 Main CLI application using Click framework.
-Provides the unified `vlite-cli check` command for data quality validation.
+Provides the unified `vlite check` command for data quality validation.
 """
 
 import sys
@@ -67,8 +67,8 @@ def _setup_logging() -> None:
             logging.getLogger().setLevel(logging.WARNING)
 
 
-@click.group(name="vlite-cli", invoke_without_command=True)
-@click.version_option(version="0.4.0", prog_name="vlite-cli")
+@click.group(name="vlite", invoke_without_command=True)
+@click.version_option(version="0.4.2", prog_name="vlite")
 @click.pass_context
 def cli_app(ctx: click.Context) -> None:
     """
@@ -142,16 +142,16 @@ def rules_help() -> None:
     Usage Examples:
 
     # Single rule
-    vlite-cli check users.csv --rule "not_null(id)"
+    vlite check --conn users.csv --rule "not_null(id)"
 
     # Multiple rules
-    vlite-cli check users.csv --rule "not_null(id)" --rule "unique(email)"
+    vlite check --conn users.csv --rule "not_null(id)" --rule "unique(email)"
 
     # Rules file
-    vlite-cli check users.csv --rules validation.json
+    vlite check --conn users.csv --rules validation.json
 
     # Database check
-    vlite-cli check mysql://user:pass@host/db.users --rule "not_null(id)"
+    vlite check --conn mysql://user:pass@host/db --table users --rule "not_null(id)"
     """
     safe_echo(help_text)
 

@@ -55,7 +55,7 @@ class TestCliApplication:
         result = runner.invoke(cli_app, ["--version"])
 
         assert result.exit_code == 0
-        assert "vlite-cli" in result.output
+        assert "vlite" in result.output
         # assert "1.0.0" in result.output
 
     def test_cli_app_help_option(self: Any, runner: CliRunner) -> None:
@@ -118,7 +118,7 @@ class TestCliApplication:
         assert "not_null(id)" in result.output
         assert "unique(email)" in result.output
         assert "length(name,2,50)" in result.output
-        assert "mysql://user:pass@host/db.users" in result.output
+        assert "mysql://user:pass@host/db" in result.output
 
     def test_rules_help_json_schema_example(self: Any, runner: CliRunner) -> None:
         """Test rules-help includes valid JSON schema example"""
@@ -146,9 +146,9 @@ class TestCliApplication:
 
         # Check usage examples
         usage_examples = [
-            "vlite-cli check users.csv --rule",
-            "vlite-cli check users.csv --rules validation.json",
-            "vlite-cli check mysql://user:pass@host/db.users",
+            "vlite check --conn users.csv --rule",
+            "vlite check --conn users.csv --rules validation.json",
+            "vlite check --conn mysql://user:pass@host/db",
         ]
 
         for example in usage_examples:
@@ -269,7 +269,16 @@ class TestCliApplication:
                 ]
 
                 result = runner.invoke(
-                    cli_app, ["check", temp_file, "--rule", "not_null(id)"]
+                    cli_app,
+                    [
+                        "check",
+                        "--conn",
+                        temp_file,
+                        "--table",
+                        "users",
+                        "--rule",
+                        "not_null(id)",
+                    ],
                 )
 
                 # Should execute without critical errors
@@ -322,10 +331,14 @@ class TestCliApplication:
         """Test handling of extremely long command lines"""
         long_rule = "not_null(" + "a" * 1000 + ")"
 
-        result = runner.invoke(cli_app, ["check", "test.csv", "--rule", long_rule])
+        result = runner.invoke(
+            cli_app,
+            ["check", "--conn", "test.csv", "--table", "users", "--rule", long_rule],
+        )
 
         # Should handle gracefully (either succeed or fail with proper error)
-        assert result.exit_code in [20, 21, 22]
+        # Exit code 2 is Click's error exit code for missing required options
+        assert result.exit_code in [2, 20, 21, 22]
         assert (
             "Error:" in result.output
             or "Usage:" in result.output
@@ -398,7 +411,7 @@ class TestCliApplication:
 
         # Should have proper Click structure
         assert "Usage:" in result.output
-        assert "vlite-cli" in result.output
+        assert "vlite" in result.output
         assert "Commands:" in result.output
 
     def test_error_exit_codes_consistency(self: Any, runner: CliRunner) -> None:

@@ -1,7 +1,7 @@
 # Logging Configuration
 
 # Global log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
-level = "ERROR"
+level = "WARNING"
 
 # Log message format
 format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

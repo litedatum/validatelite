@@ -24,18 +24,26 @@ class TestE2EComprehensiveScenarios:
 
     # Test data sources
     SQLITE_DATA_SOURCE = "test_data/customers.xlsx"
-    MYSQL_DATA_SOURCE = get_mysql_test_url() + ".customers"
-    POSTGRES_DATA_SOURCE = get_postgresql_test_url() + ".customers"
+    MYSQL_DATA_SOURCE = get_mysql_test_url()
+    POSTGRES_DATA_SOURCE = get_postgresql_test_url()
 
     @pytest.mark.parametrize(
         "data_source", [SQLITE_DATA_SOURCE, MYSQL_DATA_SOURCE, POSTGRES_DATA_SOURCE]
     )
     def test_not_null_name_rule(self, data_source: str) -> None:
         """
-        Test: check *data_source* --rule="not_null(name)"
+        Test: check --conn *data_source* --table customers --rule="not_null(name)"
         Expected: PASSED
         """
-        command = ["check", data_source, "--rule", "not_null(name)"]
+        command = [
+            "check",
+            "--conn",
+            data_source,
+            "--table",
+            "customers",
+            "--rule",
+            "not_null(name)",
+        ]
         result = E2ETestUtils.run_cli_command(command)
 
         E2ETestUtils.assert_rule_result(result, "not_null(name)", "PASSED")
@@ -46,10 +54,18 @@ class TestE2EComprehensiveScenarios:
     )
     def test_not_null_email_rule(self, data_source: str) -> None:
         """
-        Test: check *data_source* --rule="not_null(email)"
+        Test: check --conn *data_source* --table customers --rule="not_null(email)"
         Expected: FAILED
         """
-        command = ["check", data_source, "--rule", "not_null(email)"]
+        command = [
+            "check",
+            "--conn",
+            data_source,
+            "--table",
+            "customers",
+            "--rule",
+            "not_null(email)",
+        ]
         result = E2ETestUtils.run_cli_command(command)
 
         E2ETestUtils.assert_rule_result(result, "not_null(email)", "FAILED")
@@ -60,10 +76,18 @@ class TestE2EComprehensiveScenarios:
     )
     def test_unique_id_rule(self, data_source: str) -> None:
         """
-        Test: check *data_source* --rule="unique(id)"
+        Test: check --conn *data_source* --table customers --rule="unique(id)"
         Expected: PASSED
         """
-        command = ["check", data_source, "--rule", "unique(id)"]
+        command = [
+            "check",
+            "--conn",
+            data_source,
+            "--table",
+            "customers",
+            "--rule",
+            "unique(id)",
+        ]
         result = E2ETestUtils.run_cli_command(command)
 
         E2ETestUtils.assert_rule_result(result, "unique(id)", "PASSED")
@@ -74,10 +98,19 @@ class TestE2EComprehensiveScenarios:
     )
     def test_unique_name_rule_verbose(self, data_source: str) -> None:
         """
-        Test: check *data_source* --rule="unique(name)" --verbose
+        Test: check --conn *data_source* --table customers --rule="unique(name)" --verbose
         Expected: FAILED with sample data
         """
-        command = ["check", data_source, "--rule", "unique(name)", "--verbose"]
+        command = [
+            "check",
+            "--conn",
+            data_source,
+            "--table",
+            "customers",
+            "--rule",
+            "unique(name)",
+            "--verbose",
+        ]
         result = E2ETestUtils.run_cli_command(command)
 
         E2ETestUtils.assert_rule_result(result, "unique(name)", "FAILED")
@@ -89,10 +122,19 @@ class TestE2EComprehensiveScenarios:
     )
     def test_range_age_rule_verbose(self, data_source: str) -> None:
         """
-        Test: check *data_source* --rule="range(age,0,120)" --verbose
+        Test: check --conn *data_source* --table customers --rule="range(age,0,120)" --verbose
         Expected: FAILED with sample data
         """
-        command = ["check", data_source, "--rule", "range(age,0,120)", "--verbose"]
+        command = [
+            "check",
+            "--conn",
+            data_source,
+            "--table",
+            "customers",
+            "--rule",
+            "range(age,0,120)",
+            "--verbose",
+        ]
         result = E2ETestUtils.run_cli_command(command)
 
         E2ETestUtils.assert_rule_result(result, "range(age)", "FAILED")
@@ -104,12 +146,15 @@ class TestE2EComprehensiveScenarios:
     )
     def test_multiple_rules_verbose(self, data_source: str) -> None:
         """
-        Test: check *data_source* --rule="length(name,1,30)" --rule="enum(gender,0,1)" --verbose
+        Test: check --conn *data_source* --table customers --rule="length(name,1,30)" --rule="enum(gender,0,1)" --verbose
         Expected: PASSED + FAILED, failed rules return sample data
         """
         command = [
             "check",
+            "--conn",
             data_source,
+            "--table",
+            "customers",
             "--rule",
             "length(name,1,30)",
             "--rule",
@@ -130,12 +175,15 @@ class TestE2EComprehensiveScenarios:
     )
     def test_regex_email_rule_verbose(self, data_source: str) -> None:
         """
-        Test: check *data_source* --rule="regex(email,'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$')" --verbose
+        Test: check --conn *data_source* --table customers --rule="regex(email,'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$')" --verbose
         Expected: FAILED with sample data
         """
         command = [
             "check",
+            "--conn",
             data_source,
+            "--table",
+            "customers",
             "--rule",
             "regex(email,'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$')",
             "--verbose",
@@ -151,12 +199,15 @@ class TestE2EComprehensiveScenarios:
     )
     def test_validate_merge_rules_file(self, data_source: str) -> None:
         """
-        Test: check *data_source* --rules="test_data/validate_merge.json" --verbose
+        Test: check --conn *data_source* --table customers --rules="test_data/validate_merge.json" --verbose
         Expected: 2 rules PASSED, 5 rules FAILED with sample data
         """
         command = [
             "check",
+            "--conn",
             data_source,
+            "--table",
+            "customers",
             "--rules",
             "test_data/validate_merge.json",
             "--verbose",
@@ -187,12 +238,15 @@ class TestE2EComprehensiveScenarios:
     )
     def test_validate_invi_rules_file(self, data_source: str) -> None:
         """
-        Test: check *data_source* --rules="test_data/validate_invi.json" --verbose
+        Test: check --conn *data_source* --table customers --rules="test_data/validate_invi.json" --verbose
         Expected: Both rules FAILED with sample data
         """
         command = [
             "check",
+            "--conn",
             data_source,
+            "--table",
+            "customers",
             "--rules",
             "test_data/validate_invi.json",
             "--verbose",
@@ -218,9 +272,17 @@ class TestE2EComprehensiveScenarios:
         # Test with invalid connection parameters
         # Create a completely invalid MySQL connection string that doesn't depend on environment variables
         invalid_source = (
-            "mysql://invalid-user:invalid-pass@invalid-host:3306/invalid-db.customers"
+            "mysql://invalid-user:invalid-pass@invalid-host:3306/invalid-db"
         )
-        command = ["check", invalid_source, "--rule", "not_null(name)"]
+        command = [
+            "check",
+            "--conn",
+            invalid_source,
+            "--table",
+            "customers",
+            "--rule",
+            "not_null(name)",
+        ]
         result = E2ETestUtils.run_cli_command(command)
 
         E2ETestUtils.assert_error_handling(result, "connection")
@@ -232,7 +294,15 @@ class TestE2EComprehensiveScenarios:
         """
         Test handling of invalid rule syntax.
         """
-        command = ["check", data_source, "--rule", "invalid_rule_type(column)"]
+        command = [
+            "check",
+            "--conn",
+            data_source,
+            "--table",
+            "customers",
+            "--rule",
+            "invalid_rule_type(column)",
+        ]
         result = E2ETestUtils.run_cli_command(command)
 
         E2ETestUtils.assert_error_handling(result, "invalid")
@@ -244,7 +314,15 @@ class TestE2EComprehensiveScenarios:
         """
         Test handling of missing data source.
         """
-        command = ["check", "nonexistent_file.csv", "--rule", "not_null(name)"]
+        command = [
+            "check",
+            "--conn",
+            "nonexistent_file.csv",
+            "--table",
+            "nonexistent",
+            "--rule",
+            "not_null(name)",
+        ]
         result = E2ETestUtils.run_cli_command(command)
 
         E2ETestUtils.assert_error_handling(result, "file")
@@ -256,7 +334,7 @@ class TestE2EComprehensiveScenarios:
         """
         Test handling of empty rules list.
         """
-        command = ["check", data_source]
+        command = ["check", "--conn", data_source, "--table", "customers"]
         result = E2ETestUtils.run_cli_command(command)
 
         E2ETestUtils.assert_error_handling(result, "rule")
@@ -268,7 +346,16 @@ class TestE2EComprehensiveScenarios:
         """
         Test performance with large dataset (basic timing check).
         """
-        command = ["check", data_source, "--rule", "not_null(name)", "--verbose"]
+        command = [
+            "check",
+            "--conn",
+            data_source,
+            "--table",
+            "customers",
+            "--rule",
+            "not_null(name)",
+            "--verbose",
+        ]
         result = E2ETestUtils.run_cli_command(command)
 
         E2ETestUtils.assert_performance_acceptable(result, max_time=30.0)
@@ -283,7 +370,10 @@ class TestE2EComprehensiveScenarios:
         """
         command = [
             "check",
+            "--conn",
             data_source,
+            "--table",
+            "customers",
             "--rule",
             "not_null(name)",
             "--rule",
