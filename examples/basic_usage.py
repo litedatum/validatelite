@@ -68,7 +68,9 @@ def example_csv_validation() -> None:
     print(f"CSV file: {csv_file}")
     print(f"Rules file: {rules_file}")
     print("Run command:")
-    print(f"python cli_main.py check {csv_file} --rules {rules_file}")
+    print(
+        f"python cli_main.py check --conn {csv_file} --table data --rules {rules_file}"
+    )
     print()
 
 
@@ -114,7 +116,10 @@ def example_database_validation() -> None:
     print(f"Database: {db_connection}")
     print(f"Rules file: {rules_file}")
     print("Run command:")
-    print(f'python cli_main.py check "{db_connection}" --rules {rules_file}')
+    print(
+        f'python cli_main.py check --conn "{db_connection}" --table customers '
+        f"--rules {rules_file}"
+    )
     print()
 
 
@@ -153,7 +158,10 @@ def example_excel_validation() -> None:
     for rule in rules:
         print(f"  - {rule['name']}: {rule['description']}")
     print("Run command:")
-    print("python cli_main.py check products.xlsx --rules rules.json")
+    print(
+        "python cli_main.py check --conn products.xlsx --table products "
+        "--rules rules.json"
+    )
     print()
 
 
@@ -195,7 +203,7 @@ def example_custom_sql_validation() -> None:
         print(f"  - {rule['name']}: {rule['description']}")
     print("Run command:")
     print(
-        "python cli_main.py check "
+        "python cli_main.py check --conn "
         '"mysql://<your_user>:<your_password>@localhost:3306/testdb.sales" '
         "--rules custom_rules.json"
     )

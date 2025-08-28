@@ -129,7 +129,7 @@ export CLI_CONFIG_PATH=/path/to/custom/cli.toml
 export LOGGING_CONFIG_PATH=/path/to/custom/logging.toml
 
 # Run the application
-vlite-cli check data.csv --rule "not_null(id)"
+vlite check --conn data.csv --table data --rule "not_null(id)"
 ```
 
 ## Configuration Loading Order

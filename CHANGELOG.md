@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- None
+
+### Changed
+- None
+
+### Fixed
+- None
+
+### Removed
+- None
+
+## [0.4.2] - 2025-08-27
+
+### Added
 - feat(cli): refactor check command interface from positional arguments to `--conn` and `--table` options
 - feat(cli): add comprehensive test coverage for new CLI interface functionality
 - feat(cli): support explicit table name specification independent of database URL
@@ -20,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - feat(tests): add multi-table Excel file validation test scenarios
 
 ### Changed
-- **BREAKING CHANGE**: CLI interface changed from `vlite-cli check <source>` to `vlite-cli check --conn <connection> --table <table_name>`
+- **BREAKING CHANGE**: CLI interface changed from `vlite check <source>` to `vlite check --conn <connection> --table <table_name>`
 - refactor(cli): update SourceParser to accept optional table_name parameter
 - refactor(cli): modify check command to pass table_name to SourceParser.parse_source()
 - refactor(tests): update all existing CLI tests to use new interface format
@@ -47,7 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING CHANGE**: remove backward compatibility for old positional argument interface
 - remove(cli): eliminate support for `<source>` positional argument in check command
 
-## [0.4.0] - 2025-01-27
+## [0.4.0] - 2025-08-14
 
 ### Added
 - feat(cli): add `schema` command skeleton
@@ -61,7 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - tests(cli): comprehensive unit tests for `schema` command covering argument parsing, rules file validation, decomposition/mapping, aggregation priority, output formats (table/json), and exit codes (AC satisfied)
  - tests(core): unit tests for `SCHEMA` rule covering normal/edge/error cases, strict type checks, and mypy compliance
 - tests(integration): database schema drift tests for MySQL and PostgreSQL (existence, type consistency, strict mode extras, case-insensitive)
-- tests(e2e): end-to-end `vlite-cli schema` scenarios on database URLs covering happy path, drift (FIELD_MISSING/TYPE_MISMATCH), strict extras, empty rules minimal payload; JSON and table outputs
+- tests(e2e): end-to-end `vlite schema` scenarios on database URLs covering happy path, drift (FIELD_MISSING/TYPE_MISMATCH), strict extras, empty rules minimal payload; JSON and table outputs
 
 ### Changed
 - docs: update README and USAGE with schema command overview and detailed usage

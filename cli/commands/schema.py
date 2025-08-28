@@ -1,7 +1,7 @@
 """
 Schema Command
 
-Adds `vlite-cli schema` command that parses parameters, performs minimal rules
+Adds `vlite schema` command that parses parameters, performs minimal rules
 file validation (supports both single-table and multi-table formats), and prints
 output aligned with the existing CLI style.
 """
