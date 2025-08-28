@@ -1,5 +1,6 @@
 # ValidateLite
 
+[![PyPI version](https://badge.fury.io/py/validatelite.svg)](https://badge.fury.io/py/validatelite)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code Coverage](https://img.shields.io/badge/coverage-80%25-green.svg)](https://github.com/litedatum/validatelite)

@@ -1,5 +1,7 @@
 # ValidateLite - User Manual
 
+[![PyPI version](https://badge.fury.io/py/validatelite.svg)](https://badge.fury.io/py/validatelite)
+
 This document provides comprehensive instructions on how to use ValidateLite for data validation tasks. ValidateLite is a lightweight, zero-config Python CLI tool for data quality validation across files and SQL databases.
 
 ---
@@ -31,14 +33,20 @@ This document provides comprehensive instructions on how to use ValidateLite for
 ### Installation
 
 **Option 1: Install from PyPI (Recommended)**
+
+Install the latest version from [PyPI](https://pypi.org/project/validatelite/):
 ```bash
 pip install validatelite
 ```
 
-**Option 2: Install from pre-built package**
-```bash
-pip install validatelite-0.4.2-py3-none-any.whl
-```
+**Option 2: Install from a specific release**
+
+1.  Navigate to the [**GitHub Releases**](https://github.com/litedatum/validatelite/releases) page.
+2.  Download the desired `.whl` file from the "Assets" section of a specific release.
+3.  Install the file using pip:
+    ```bash
+    pip install /path/to/downloaded/validatelite-x.y.z-py3-none-any.whl
+    ```
 
 **Option 3: Run from source**
 ```bash
