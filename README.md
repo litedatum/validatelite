@@ -1,10 +1,103 @@
 # ValidateLite
 
-ValidateLite is a lightweight, zero-config Python CLI tool for validating data quality across files and SQL databases - built for modern data pipelines and CI/CD automation. This python data validation tool is a flexible, extensible command-line tool for automated data quality validation, profiling, and rule-based checks across diverse data sources. Designed for data engineers, analysts, and developers to ensure data reliability and compliance in modern data pipelines.
-
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code Coverage](https://img.shields.io/badge/coverage-80%25-green.svg)](https://github.com/litedatum/validatelite)
+
+**ValidateLite: A lightweight data validation tool for engineers who need answers, fast.**
+
+Unlike other complex **data validation tools**, ValidateLite provides two powerful, focused commands for different scenarios:
+
+*   **`vlite check`**: For quick, ad-hoc data checks. Need to verify if a column is unique or not null *right now*? The `check` command gets you an answer in 30 seconds, zero config required.
+
+*   **`vlite schema`**: For robust, repeatable **database schema validation**. It's your best defense against **schema drift**. Embed it in your CI/CD and ETL pipelines to enforce data contracts, ensuring data integrity before it becomes a problem.
+
+---
+
+## Core Use Case: Automated Schema Validation
+
+The `vlite schema` command is key to ensuring the stability of your data pipelines. It allows you to quickly verify that a database table or data file conforms to a defined structure.
+
+### Scenario 1: Gate Deployments in CI/CD
+
+Automatically check for breaking schema changes before they get deployed, preventing production issues caused by unexpected modifications.
+
+**Example Workflow (`.github/workflows/ci.yml`)**
+```yaml
+jobs:
+  validate-db-schema:
+    name: Validate Database Schema
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install ValidateLite
+        run: pip install validatelite
+
+      - name: Run Schema Validation
+        run: |
+          vlite schema --conn "mysql://${{ secrets.DB_USER }}:${{ secrets.DB_PASS }}@${{ secrets.DB_HOST }}/sales" \
+                           --rules ./schemas/customers_schema.json
+```
+
+### Scenario 2: Monitor ETL/ELT Pipelines
+
+Set up validation checkpoints at various stages of your data pipelines to guarantee data quality and avoid "garbage in, garbage out."
+
+**Example Rule File (`customers_schema.json`)**
+```json
+{
+  "customers": {
+    "rules": [
+      { "field": "id", "type": "integer", "required": true },
+      { "field": "name", "type": "string", "required": true },
+      { "field": "email", "type": "string", "required": true },
+      { "field": "age", "type": "integer", "min": 18, "max": 100 },
+      { "field": "gender", "enum": ["Male", "Female", "Other"] },
+      { "field": "invalid_col" }
+    ]
+  }
+}
+```
+
+**Run Command:**
+```bash
+vlite schema --conn "mysql://user:pass@host:3306/sales" --rules customers_schema.json
+```
+
+---
+
+## Quick Start: Ad-Hoc Checks with `check`
+
+For temporary, one-off validation needs, the `check` command is your best friend.
+
+**1. Install (if you haven't already):**
+```bash
+pip install validatelite
+```
+
+**2. Run a check:**
+```bash
+# Check for nulls in a CSV file's 'id' column
+vlite check --conn "customers.csv" --table customers --rule "not_null(id)"
+
+# Check for uniqueness in a database table's 'email' column
+vlite check --conn "mysql://user:pass@host/db" --table customers --rule "unique(email)"
+```
+
+---
+
+## Learn More
+
+- **[Usage Guide (USAGE.md)](docs/USAGE.md)**: Learn about all commands, arguments, and advanced features.
+- **[Configuration Reference (CONFIG_REFERENCE.md)](docs/CONFIG_REFERENCE.md)**: See how to configure the tool via `toml` files.
+- **[Contributing Guide (CONTRIBUTING.md)](CONTRIBUTING.md)**: We welcome contributions!
 
 ---
 
@@ -12,223 +105,12 @@ ValidateLite is a lightweight, zero-config Python CLI tool for validating data q
 
 Follow the journey of building ValidateLite through our development blog posts:
 
-- **[DevLog #1: Building a Zero-Config Data Validation Tool](https://blog.litedatum.com/posts/Devlog01-data-validation-tool/)** - The initial vision and architecture of ValidateLite
-- **[DevLog #2: Why I Scrapped My Half-Built Data Validation Platform](https://blog.litedatum.com/posts/Devlog02-Rethinking-My-Data-Validation-Tool/)** - Lessons learned from scope creep and the pivot to a focused CLI tool
-- **[Rule-Driven Schema Validation: A Lightweight Solution](https://blog.litedatum.com/posts/Rule-Driven-Schema-Validation/)** - Deep dive into schema drift challenges and how ValidateLite's schema validation provides a lightweight alternative to complex frameworks
-
----
-
-## 🚀 Quick Start
-
-### For Regular Users
-
-**Option 1: Install from [PyPI](https://pypi.org/project/validatelite/) (Recommended)**
-```bash
-pip install validatelite
-vlite --help
-```
-
-**Option 2: Install from pre-built package**
-```bash
-# Download the latest release from GitHub
-pip install validatelite-0.1.0-py3-none-any.whl
-vlite --help
-```
-
-**Option 3: Run from source**
-```bash
-git clone https://github.com/litedatum/validatelite.git
-cd validatelite
-pip install -r requirements.txt
-python cli_main.py --help
-```
-
-**Option 4: Install with pip-tools (for development)**
-```bash
-git clone https://github.com/litedatum/validatelite.git
-cd validatelite
-pip install pip-tools
-pip-compile requirements.in
-pip install -r requirements.txt
-python cli_main.py --help
-```
-
-### For Developers & Contributors
-
-If you want to contribute to the project or need the latest development version:
-
-```bash
-git clone https://github.com/litedatum/validatelite.git
-cd validatelite
-
-# Install dependencies (choose one approach)
-# Option 1: Install from pinned requirements
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
-
-# Option 2: Use pip-tools for development
-pip install pip-tools
-python scripts/update_requirements.py
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
-
-# Install pre-commit hooks
-pre-commit install
-```
-
-See [DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md) for detailed development setup instructions.
-
----
-
-## ✨ Features
-
-- **🔧 Rule-based Data Quality Engine**: Supports completeness, uniqueness, validity, and custom rules
-- **🖥️ Extensible CLI**: Easily integrate with CI/CD and automation workflows
-- **🗄️ Multi-Source Support**: Validate data from files (CSV, Excel) and databases (MySQL, PostgreSQL, SQLite)
-- **⚙️ Configurable & Modular**: Flexible configuration via TOML and environment variables
-- **🛡️ Comprehensive Error Handling**: Robust exception and error classification system
-- **🧪 Tested & Reliable**: High code coverage, modular tests, and pre-commit hooks
-- **📐 Schema Drift Prevention**: Lightweight schema validation that prevents data pipeline failures from unexpected schema changes - a simple alternative to complex validation frameworks
-
----
-
-## 📖 Documentation
-
-- **[USAGE.md](docs/USAGE.md)** - Complete user guide with examples and best practices
-- Schema command JSON output contract: `docs/schemas/schema_results.schema.json`
-- **[DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md)** - Development environment setup and contribution guidelines
-- **[CONFIG_REFERENCE.md](docs/CONFIG_REFERENCE.md)** - Configuration file reference
-- **[ROADMAP.md](docs/ROADMAP.md)** - Development roadmap and future plans
-- **[CHANGELOG.md](CHANGELOG.md)** - Release history and changes
-
----
-
-## 🎯 Basic Usage
-
-### Validate a CSV file
-```bash
-vlite check data.csv --rule "not_null(id)" --rule "unique(email)"
-```
-
-### Validate a database table
-```bash
-vlite check "mysql://user:pass@host:3306/db.table" --rules validation_rules.json
-```
-
-### Check with verbose output
-```bash
-vlite check data.csv --rules rules.json --verbose
-```
-
-### Validate against a schema file (single table)
-```bash
-# Table is derived from the data-source URL, the schema file is single-table in v1
-vlite schema "mysql://user:pass@host:3306/sales.users" --rules schema.json
-
-# Get aggregated JSON with column-level details (see docs/schemas/schema_results.schema.json)
-vlite schema "mysql://.../sales.users" --rules schema.json --output json
-```
-
-For detailed usage examples and advanced features, see [USAGE.md](docs/USAGE.md).
-
----
-
-## 🏗️ Project Structure
-
-```
-validatelite/
-├── cli/           # CLI logic and commands
-├── core/          # Rule engine and core validation logic
-├── shared/        # Common utilities, enums, exceptions, and schemas
-├── config/        # Example and template configuration files
-├── tests/         # Unit, integration, and E2E tests
-├── scripts/       # Utility scripts
-├── docs/          # Documentation
-└── examples/      # Usage examples and sample data
-```
-
----
-
-## 🧪 Testing
-
-### For Regular Users
-The project includes comprehensive tests to ensure reliability. If you encounter issues, please check the [troubleshooting section](docs/USAGE.md#error-handling) in the usage guide.
-
-### For Developers
-```bash
-# Set up test databases (requires Docker)
-./scripts/setup_test_databases.sh start
-
-# Run all tests with coverage
-pytest -vv --cov
-
-# Run tests quietly (suppress debug messages)
-python scripts/run_tests_quiet.py --cov
-
-# Run specific test categories
-pytest tests/unit/ -v          # Unit tests only
-pytest tests/integration/ -v   # Integration tests
-pytest tests/e2e/ -v           # End-to-end tests
-
-# Run specific tests quietly
-python scripts/run_tests_quiet.py tests/unit/ -v
-
-# Code quality checks
-pre-commit run --all-files
-
-# Stop test databases when done
-./scripts/setup_test_databases.sh stop
-```
-
----
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md).
-
-### Development Setup
-For detailed development setup instructions, see [DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md).
-
----
-
-## ❓ FAQ: Why ValidateLite?
-
-### Q: What is ValidateLite, in one sentence?
-A: ValidateLite is a lightweight, zero-config Python CLI tool for data quality validation, profiling, and rule-based checks across CSV files and SQL databases.
-
-### Q: How is it different from other tools like Great Expectations or Pandera?
-A: Unlike heavyweight frameworks, ValidateLite is built for simplicity and speed — no code generation, no DSLs, just one command to validate your data in pipelines or ad hoc scripts.
-
-### Q: What kind of data sources are supported?
-A: Currently supports CSV, Excel, and SQL databases (MySQL, PostgreSQL, SQLite) with planned support for more cloud and file-based sources.
-
-### Q: Who should use this?
-A: Data engineers, analysts, and Python developers who want to integrate fast, automated data quality checks into ETL jobs, CI/CD pipelines, or local workflows.
-
-### Q: Does it require writing Python code?
-A: Not at all. You can specify rules inline in the command line or via a simple JSON config file — no coding needed.
-
-### Q: Is ValidateLite open-source?
-A: Yes! It’s licensed under MIT and available on GitHub — stars and contributions are welcome!
-
-### Q: How can I use it in CI/CD?
-A: Just install via pip and add a vlite check ... step in your data pipeline or GitHub Action. It returns exit codes you can use for gating deployments.
-
----
-
-## 🔒 Security
-
-For security issues, please review [SECURITY.md](SECURITY.md) and follow the recommended process.
+- **[DevLog #1: Building a Zero-Config Data Validation Tool](https://blog.litedatum.com/posts/Devlog01-data-validation-tool/)**
+- **[DevLog #2: Why I Scrapped My Half-Built Data Validation Platform](https://blog.litedatum.com/posts/Devlog02-Rethinking-My-Data-Validation-Tool/)
+- **[Rule-Driven Schema Validation: A Lightweight Solution](https://blog.litedatum.com/posts/Rule-Driven-Schema-Validation/)
 
 ---
 
 ## 📄 License
 
-This project is licensed under the terms of the [MIT License](LICENSE).
-
----
-
-## 🙏 Acknowledgements
-
-- Inspired by best practices in data engineering and open-source data quality tools
-- Thanks to all contributors and users for their feedback and support
+This project is licensed under the [MIT License](LICENSE).

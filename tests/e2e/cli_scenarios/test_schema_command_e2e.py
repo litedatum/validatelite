@@ -1,5 +1,5 @@
 """
-E2E: vlite-cli schema on databases and table/json outputs
+E2E: vlite schema on databases and table/json outputs
 
 Scenarios derived from notes/测试方案-数据库SchemaDrift与CLI-Schema命令.md:
 - Happy path on DB URL with table/json outputs

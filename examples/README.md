@@ -18,14 +18,14 @@ This directory contains examples and sample files to help you get started with V
 
 2. **Validate the sample data:**
    ```bash
-   python cli_main.py check examples/sample_data.csv --rules examples/sample_rules.json
+   python cli_main.py check --conn examples/sample_data.csv --table data --rules examples/sample_rules.json
    ```
 
 3. **Test with your own data:**
    ```bash
    # Create your own rules file based on sample_rules.json
    # Then run validation
-   python cli_main.py check your_data.csv --rules your_rules.json
+   python cli_main.py check --conn your_data.csv --table data --rules your_rules.json
    ```
 
 ## Example Rules

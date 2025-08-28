@@ -37,7 +37,7 @@ pip install validatelite
 
 **Option 2: Install from pre-built package**
 ```bash
-pip install validatelite-0.4.0-py3-none-any.whl
+pip install validatelite-0.4.2-py3-none-any.whl
 ```
 
 **Option 3: Run from source**
@@ -57,13 +57,13 @@ Let's start with a simple validation to check that all records in a CSV file hav
 
 ```bash
 # Validate a CSV file
-vlite check examples/sample_data.csv --rule "not_null(customer_id)"
+vlite check --conn examples/sample_data.csv --table data --rule "not_null(customer_id)"
 
 # Validate a database table
-vlite check "mysql://user:pass@localhost:3306/mydb.customers" --rule "unique(email)"
+vlite check --conn "mysql://user:pass@localhost:3306/mydb" --table customers --rule "unique(email)"
 
 # Validate against a schema file
-vlite schema "mysql://user:pass@localhost:3306/mydb.customers" --rules schema.json
+vlite schema --conn "mysql://user:pass@localhost:3306/mydb" --rules schema.json
 ```
 
 ---
@@ -79,7 +79,7 @@ ValidateLite provides two main commands:
 
 Both commands follow this general pattern:
 ```bash
-vlite <command> <data_source> [options]
+vlite <command> --conn <data_source> --table <table_name> [options]
 ```
 
 ### Data Source Types
@@ -89,9 +89,9 @@ ValidateLite supports multiple data source types:
 | Type | Format | Example |
 |------|--------|---------|
 | **Local Files** | CSV, Excel, JSON, JSONL | `data/customers.csv` |
-| **MySQL** | Connection string | `mysql://user:pass@host:3306/db.table` |
-| **PostgreSQL** | Connection string | `postgresql://user:pass@host:5432/db.table` |
-| **SQLite** | File path with table | `sqlite:///path/to/db.sqlite.table` |
+| **MySQL** | Connection string | `mysql://user:pass@host:3306/db` |
+| **PostgreSQL** | Connection string | `postgresql://user:pass@host:5432/db` |
+| **SQLite** | File path with table | `sqlite:///path/to/db.sqlite` |
 
 ### Rule Types Overview
 
@@ -114,11 +114,12 @@ The `check` command allows you to specify validation rules either inline or thro
 #### Basic Syntax & Parameters
 
 ```bash
-vlite check <data_source> [options]
+vlite check --conn <data_source> --table <table_name> [options]
 ```
 
 **Required Parameters:**
-- `<data_source>` - Path to file or database connection string
+- `--conn <data_source>` - Path to file or database connection string
+- `--table <table_name>` - Table name or identifier for the data source
 
 **Options:**
 | Option | Description |
@@ -137,10 +138,10 @@ Use `--rule` for simple, quick validations:
 
 ```bash
 # Single rule
-vlite check data.csv --rule "not_null(id)"
+vlite check --conn data.csv --table data --rule "not_null(id)"
 
 # Multiple rules
-vlite check data.csv \
+vlite check --conn data.csv --table data \
   --rule "not_null(name)" \
   --rule "unique(id)" \
   --rule "range(age, 18, 99)"
@@ -221,12 +222,12 @@ Sample Failed Data:
 
 **1. Basic file validation:**
 ```bash
-vlite check test_data/customers.xlsx --rule "not_null(name)"
+vlite check --conn test_data/customers.xlsx --table customers --rule "not_null(name)"
 ```
 
 **2. Multiple rules with verbose output:**
 ```bash
-vlite check test_data/customers.xlsx \
+vlite check --conn test_data/customers.xlsx --table customers \
   --rule "unique(email)" \
   --rule "regex(email, '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$')" \
   --verbose
@@ -234,14 +235,14 @@ vlite check test_data/customers.xlsx \
 
 **3. Comprehensive validation using rules file:**
 ```bash
-vlite check "mysql://root:password@localhost:3306/data_quality.customers" \
+vlite check --conn "mysql://root:password@localhost:3306/data_quality" --table customers \
   --rules "validation_rules.json" \
   --verbose
 ```
 
 **4. CSV file with multiple constraints:**
 ```bash
-vlite check examples/sample_data.csv \
+vlite check --conn examples/sample_data.csv --table data \
   --rule "not_null(customer_id)" \
   --rule "unique(customer_id)" \
   --rule "length(email, 5, 100)" \
@@ -259,17 +260,17 @@ vlite check examples/sample_data.csv \
 
 ### The `schema` Command - Schema Validation
 
-The `schema` command validates tables against JSON schema files, automatically decomposing schemas into atomic rules with intelligent prioritization and aggregation.
+The `schema` command validates tables against JSON schema files, automatically decomposing schemas into atomic rules with intelligent prioritization and aggregation. **NEW in v0.4.2**: Enhanced multi-table support, Excel multi-sheet file support, and improved output formatting.
 
 #### Basic Syntax & Parameters
 
 ```bash
-vlite schema <data_source> --rules <schema_file.json> [options]
+vlite schema --conn <data_source> --rules <schema_file.json> [options]
 ```
 
 **Required Parameters:**
-- `<data_source>` - Database/table identifier (table derived from URL)
-- `--rules <file.json>` - Path to JSON schema file
+- `--conn <data_source>` - Database connection string or file path (now supports Excel multi-sheet files)
+- `--rules <file.json>` - Path to JSON schema file (supports both single-table and multi-table formats)
 
 **Options:**
 | Option | Description |
@@ -278,9 +279,10 @@ vlite schema <data_source> --rules <schema_file.json> [options]
 | `--verbose` | Show detailed information in table mode |
 | `--help` | Display command help |
 
-#### Schema File Structure (v1)
+#### Schema File Structure
 
-**Minimal Structure:**
+**Single-Table Format (v1):**
+_Only applicable to CSV file data sources_
 ```json
 {
   "rules": [
@@ -295,6 +297,29 @@ vlite schema <data_source> --rules <schema_file.json> [options]
 }
 ```
 
+**NEW: Multi-Table Format (v0.4.2):**
+```json
+{
+  "customers": {
+    "rules": [
+      { "field": "id", "type": "integer", "required": true },
+      { "field": "name", "type": "string", "required": true },
+      { "field": "email", "type": "string", "required": true }
+    ],
+    "strict_mode": true,
+    "case_insensitive": false
+  },
+  "orders": {
+    "rules": [
+      { "field": "order_id", "type": "integer", "required": true },
+      { "field": "customer_id", "type": "integer", "required": true },
+      { "field": "total", "type": "float", "min": 0.01 }
+    ],
+    "strict_mode": false
+  }
+}
+```
+
 **Supported Field Types:**
 - `string`, `integer`, `float`, `boolean`, `date`, `datetime`
 
@@ -304,8 +329,24 @@ vlite schema <data_source> --rules <schema_file.json> [options]
 - `required` - Generate NOT_NULL rule if true
 - `min`/`max` - Generate RANGE rule for numeric types
 - `enum` - Generate ENUM rule with allowed values
-- `strict_mode` - Report extra columns as violations
-- `case_insensitive` - Case-insensitive column matching
+- `strict_mode` - Report extra columns as violations (table-level option)
+- `case_insensitive` - Case-insensitive column matching (table-level option)
+
+#### NEW: Multi-Table and Excel Support
+
+**Excel Multi-Sheet Files:**
+The schema command now supports Excel files with multiple worksheets as data sources. Each worksheet can be validated against its corresponding schema definition.
+
+```bash
+# Validate Excel file with multiple sheets
+vlite schema --conn "data.xlsx" --rules multi_table_schema.json
+```
+
+**Multi-Table Validation:**
+- Support for validating multiple tables in a single command
+- Table-level configuration options (strict_mode, case_insensitive)
+- Automatic detection of multi-table data sources
+- Grouped output display by table
 
 #### Rule Decomposition Logic
 
@@ -328,7 +369,7 @@ Schema Field → Generated Rules
 
 #### Output Formats
 
-**Table Mode (default)** - Column-grouped summary:
+**Table Mode (default)** - Column-grouped summary with improved formatting:
 ```
 Column Validation Results
 ═════════════════════════
@@ -345,42 +386,91 @@ Column: status
   ⚠ Dependent checks skipped
 ```
 
-**JSON Mode** (`--output json`) - Machine-readable format:
+**NEW: Multi-Table Table Mode:**
+```
+Table: customers
+═══════════════
+Column: id
+  ✓ Field exists (integer)
+  ✓ Not null constraint
+
+Table: orders
+═══════════════
+Column: order_id
+  ✓ Field exists (integer)
+  ✓ Not null constraint
+```
+
+**JSON Mode** (`--output json`) - Machine-readable format with enhanced structure:
 ```json
 {
   "summary": {
-    "total_checks": 8,
-    "passed": 5,
-    "failed": 2,
-    "skipped": 1
+    "total_checks": 12,
+    "passed": 8,
+    "failed": 3,
+    "skipped": 1,
+    "execution_time_ms": 1250
   },
   "results": [...],
   "fields": {
-    "id": { "status": "passed", "checks": [...] },
-    "age": { "status": "failed", "checks": [...] }
+    "age": {
+      "status": "passed",
+      "checks": ["existence", "type", "not_null", "range"]
+    },
+    "unknown_field": {
+      "status": "extra",
+      "checks": []
+    }
   },
-  "schema_extras": ["unknown_column"]
+  "schema_extras": ["unknown_field"],
+  "tables": {
+    "customers": {
+      "status": "passed",
+      "total_checks": 6,
+      "passed": 6
+    },
+    "orders": {
+      "status": "failed",
+      "total_checks": 6,
+      "passed": 2,
+      "failed": 4
+    }
+  }
 }
 ```
+
+**Full JSON schema definition:** `docs/schemas/schema_results.schema.json`
 
 #### Practical Examples
 
 **1. Basic schema validation:**
 ```bash
-vlite schema "mysql://root:password@localhost:3306/data_quality.customers" \
+vlite schema --conn "mysql://root:password@localhost:3306/data_quality" \
   --rules test_data/schema.json
 ```
 
-**2. JSON output for automation:**
+**2. NEW: Multi-table schema validation:**
 ```bash
-vlite schema "mysql://user:pass@host:3306/sales.users" \
+vlite schema --conn "mysql://user:pass@host:3306/sales" \
+  --rules multi_table_schema.json
+```
+
+**3. NEW: Excel multi-sheet validation:**
+```bash
+vlite schema --conn "data.xlsx" \
+  --rules excel_schema.json
+```
+
+**4. JSON output for automation:**
+```bash
+vlite schema --conn "mysql://user:pass@host:3306/sales" \
   --rules schema.json \
   --output json
 ```
 
-**3. Verbose table output:**
+**5. Verbose table output:**
 ```bash
-vlite schema "postgresql://user:pass@localhost:5432/app.customers" \
+vlite schema --conn "postgresql://user:pass@localhost:5432/app" \
   --rules customer_schema.json \
   --verbose
 ```
@@ -407,13 +497,13 @@ vlite schema "postgresql://user:pass@localhost:5432/app.customers" \
 **Examples:**
 ```bash
 # CSV with custom delimiter (auto-detected)
-vlite check data/customers.csv --rule "not_null(id)"
+vlite check --conn data/customers.csv --table customers --rule "not_null(id)"
 
 # Excel file (auto-detects first sheet)
-vlite check reports/monthly_data.xlsx --rule "unique(transaction_id)"
+vlite check --conn reports/monthly_data.xlsx --table data --rule "unique(transaction_id)"
 
 # JSON Lines file
-vlite check logs/events.jsonl --rule "not_null(timestamp)"
+vlite check --conn logs/events.jsonl --table events --rule "not_null(timestamp)"
 ```
 
 #### Database Sources
@@ -422,30 +512,30 @@ vlite check logs/events.jsonl --rule "not_null(timestamp)"
 
 **MySQL:**
 ```
-mysql://[username[:password]@]host[:port]/database.table
+mysql://[username[:password]@]host[:port]/database
 ```
 
 **PostgreSQL:**
 ```
-postgresql://[username[:password]@]host[:port]/database.table
+postgresql://[username[:password]@]host[:port]/database
 ```
 
 **SQLite:**
 ```
-sqlite:///[absolute_path_to_file].table
-sqlite://[relative_path_to_file].table
+sqlite:///[absolute_path_to_file]
+sqlite://[relative_path_to_file]
 ```
 
 **Connection Examples:**
 ```bash
 # MySQL with authentication
-vlite check "mysql://admin:secret123@db.company.com:3306/sales.customers" --rule "unique(id)"
+vlite check --conn "mysql://admin:secret123@db.company.com:3306/sales" --table customers --rule "unique(id)"
 
 # PostgreSQL with default port
-vlite check "postgresql://analyst@analytics-db/warehouse.orders" --rules validation.json
+vlite check --conn "postgresql://analyst@analytics-db/warehouse" --table orders --rules validation.json
 
 # SQLite local file
-vlite check "sqlite:///data/local.db.users" --rule "not_null(email)"
+vlite check --conn "sqlite:///data/local.db" --table users --rule "not_null(email)"
 ```
 
 ### Validation Rules Deep Dive

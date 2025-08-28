@@ -2,7 +2,7 @@
 """
 ValidateLite CLI Main Entry Point
 
-Main entry point for the vlite-cli command-line tool.
+Main entry point for the vlite command-line tool.
 """
 
 import os

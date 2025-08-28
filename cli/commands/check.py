@@ -1,7 +1,7 @@
 """
 Check Command Implementation
 
-The core `vlite-cli check` command for data quality validation.
+The core `vlite check` command for data quality validation.
 Supports smart source identification, rule parsing, and formatted output.
 """
 
@@ -76,7 +76,7 @@ def check_command(
     Check data quality for the given source.
 
     NEW FORMAT:
-        vlite-cli check --conn <connection> --table <table_name> [options]
+        vlite check --conn <connection> --table <table_name> [options]
 
     SOURCE can be:
     - File path: users.csv, data.xlsx, records.json
@@ -84,8 +84,8 @@ def check_command(
     - SQLite file: sqlite:///path/to/file.db
 
     Examples:
-        vlite-cli check --conn users.csv --table users --rule "not_null(id)"
-        vlite-cli check --conn mysql://user:pass@host/db \
+        vlite check --conn users.csv --table users --rule "not_null(id)"
+        vlite check --conn mysql://user:pass@host/db \
             --table users --rules validation.json
     """
     # Record start time
@@ -300,17 +300,17 @@ SUPPORTED RULE TYPES:
   enum(column,value1,value2...) - Check allowed enum values
 
 EXAMPLES:
-  vlite-cli check users.csv --rule "not_null(id)"
-  vlite-cli check users.csv --rule "length(name,2,50)"
-  vlite-cli check users.csv --rule "unique(email)"
-  vlite-cli check users.csv --rule "range(age,18,65)"
-  vlite-cli check users.csv --rule "regex(email,^[\\w.-]+@[\\w.-]+\\.[a-zA-Z]{2,}$)"
+  vlite check users.csv --rule "not_null(id)"
+  vlite check users.csv --rule "length(name,2,50)"
+  vlite check users.csv --rule "unique(email)"
+  vlite check users.csv --rule "range(age,18,65)"
+  vlite check users.csv --rule "regex(email,^[\\w.-]+@[\\w.-]+\\.[a-zA-Z]{2,}$)"
 
 MULTIPLE RULES:
-  vlite-cli check users.csv --rule "not_null(id)" --rule "unique(email)"
+  vlite check users.csv --rule "not_null(id)" --rule "unique(email)"
 
 RULES FILE:
-  vlite-cli check users.csv --rules validation.json
+  vlite check users.csv --rules validation.json
 
   Example validation.json:
   {

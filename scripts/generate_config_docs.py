@@ -158,7 +158,7 @@ def generate_environment_variables_docs() -> str:
     docs += "export LOGGING_CONFIG_PATH=/path/to/custom/logging.toml\n"
     docs += "\n"
     docs += "# Run the application\n"
-    docs += 'vlite-cli check data.csv --rule "not_null(id)"\n'
+    docs += 'vlite check data.csv --rule "not_null(id)"\n'
     docs += "```\n\n"
 
     return docs
