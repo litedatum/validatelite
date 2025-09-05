@@ -160,6 +160,59 @@ def _validate_single_rule_item(item: Dict[str, Any], context: str) -> None:
                     f"{context}.{bound_key} must be numeric when provided"
                 )
 
+    # max_length
+    if "max_length" in item:
+        value = item["max_length"]
+        if not isinstance(value, int) or value < 0:
+            raise click.UsageError(
+                f"{context}.max_length must be a non-negative integer when provided"
+            )
+        # Validate max_length is only for string types
+        type_name = item.get("type", "").lower() if item.get("type") else None
+        if type_name and type_name != "string":
+            raise click.UsageError(
+                f"{context}.max_length can only be specified for 'string' type "
+                f"fields, not '{type_name}'"
+            )
+
+    # precision
+    if "precision" in item:
+        value = item["precision"]
+        if not isinstance(value, int) or value < 0:
+            raise click.UsageError(
+                f"{context}.precision must be a non-negative integer when provided"
+            )
+        # Validate precision is only for float types
+        type_name = item.get("type", "").lower() if item.get("type") else None
+        if type_name and type_name != "float":
+            raise click.UsageError(
+                f"{context}.precision can only be specified for 'float' type "
+                f"fields, not '{type_name}'"
+            )
+
+    # scale
+    if "scale" in item:
+        value = item["scale"]
+        if not isinstance(value, int) or value < 0:
+            raise click.UsageError(
+                f"{context}.scale must be a non-negative integer when provided"
+            )
+        # Validate scale is only for float types
+        type_name = item.get("type", "").lower() if item.get("type") else None
+        if type_name and type_name != "float":
+            raise click.UsageError(
+                f"{context}.scale can only be specified for 'float' type "
+                f"fields, not '{type_name}'"
+            )
+        # Validate scale <= precision when both are specified
+        if "precision" in item:
+            precision_val = item["precision"]
+            if isinstance(precision_val, int) and value > precision_val:
+                raise click.UsageError(
+                    f"{context}.scale ({value}) cannot be greater than precision "
+                    f"({precision_val})"
+                )
+
 
 def _validate_rules_payload(payload: Any) -> Tuple[List[str], int]:
     """Validate the minimal structure of the schema rules file.
@@ -326,10 +379,25 @@ def _decompose_single_table_schema(
             # Should have been validated earlier; keep defensive check
             raise click.UsageError("Each rule item must have a non-empty 'field'")
 
-        # SCHEMA: type contributes expected_type
+        # SCHEMA: collect column metadata
+        column_metadata = {}
+
+        # Add expected_type if type is specified
         if "type" in item and item["type"] is not None:
             dt = _map_type_name_to_datatype(str(item["type"]))
-            columns_map[field_name] = {"expected_type": dt.value}
+            column_metadata["expected_type"] = dt.value
+
+        # Add metadata fields if present
+        if "max_length" in item:
+            column_metadata["max_length"] = item["max_length"]
+        if "precision" in item:
+            column_metadata["precision"] = item["precision"]
+        if "scale" in item:
+            column_metadata["scale"] = item["scale"]
+
+        # Only add to columns_map if we have any metadata to store
+        if column_metadata:
+            columns_map[field_name] = column_metadata
 
         # NOT_NULL
         if bool(item.get("required", False)):
