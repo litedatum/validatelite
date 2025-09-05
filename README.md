@@ -72,6 +72,75 @@ Set up validation checkpoints at various stages of your data pipelines to guaran
 vlite schema --conn "mysql://user:pass@host:3306/sales" --rules customers_schema.json
 ```
 
+### Advanced Schema Examples
+
+**Multi-Table Validation:**
+```json
+{
+  "customers": {
+    "rules": [
+      { "field": "id", "type": "integer", "required": true },
+      { "field": "name", "type": "string", "required": true },
+      { "field": "email", "type": "string", "required": true },
+      { "field": "age", "type": "integer", "min": 18, "max": 100 }
+    ],
+    "strict_mode": true
+  },
+  "orders": {
+    "rules": [
+      { "field": "id", "type": "integer", "required": true },
+      { "field": "customer_id", "type": "integer", "required": true },
+      { "field": "total", "type": "float", "min": 0 },
+      { "field": "status", "enum": ["pending", "completed", "cancelled"] }
+    ]
+  }
+}
+```
+
+**CSV File Validation:**
+```bash
+# Validate CSV file structure
+vlite schema --conn "sales_data.csv" --rules csv_schema.json --output json
+```
+
+**Complex Data Types:**
+```json
+{
+  "events": {
+    "rules": [
+      { "field": "timestamp", "type": "datetime", "required": true },
+      { "field": "event_type", "enum": ["login", "logout", "purchase"] },
+      { "field": "user_id", "type": "string", "required": true },
+      { "field": "metadata", "type": "string" }
+    ],
+    "case_insensitive": true
+  }
+}
+```
+
+**Available Data Types:**
+- `string` - Text data (VARCHAR, TEXT, CHAR)
+- `integer` - Whole numbers (INT, BIGINT, SMALLINT)
+- `float` - Decimal numbers (FLOAT, DOUBLE, DECIMAL)
+- `boolean` - True/false values (BOOLEAN, BOOL, BIT)
+- `date` - Date only (DATE)
+- `datetime` - Date and time (DATETIME, TIMESTAMP)
+
+**Command Options:**
+```bash
+# Basic validation
+vlite schema --conn <connection> --rules <rules_file>
+
+# JSON output for automation
+vlite schema --conn <connection> --rules <rules_file> --output json
+
+# Exit with error code on any failure
+vlite schema --conn <connection> --rules <rules_file> --fail-on-error
+
+# Verbose logging
+vlite schema --conn <connection> --rules <rules_file> --verbose
+```
+
 ---
 
 ## Quick Start: Ad-Hoc Checks with `check`

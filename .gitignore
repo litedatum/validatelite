@@ -20,7 +20,7 @@ wheels/
 .installed.cfg
 *.egg
 backup/
-notes/
+# notes/
 temp/
 /tmp*/
 
@@ -79,3 +79,6 @@ site/
 
 # Cursor
 .cursor/
+
+# Claude Code
+CLAUDE.md

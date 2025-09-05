@@ -11,6 +11,7 @@ from shared.exceptions.exception_system import RuleExecutionError
 
 from .base_executor import BaseExecutor
 from .completeness_executor import CompletenessExecutor
+from .schema_executor import SchemaExecutor
 from .uniqueness_executor import UniquenessExecutor
 from .validity_executor import ValidityExecutor
 
@@ -30,8 +31,9 @@ class ExecutorRegistry:
     def _register_builtin_executors(self) -> None:
         """Register built-in executors"""
         self.register_executor("completeness", CompletenessExecutor)
-        self.register_executor("validity", ValidityExecutor)
+        self.register_executor("schema", SchemaExecutor)
         self.register_executor("uniqueness", UniquenessExecutor)
+        self.register_executor("validity", ValidityExecutor)
 
     def register_executor(self, name: str, executor_class: Type[BaseExecutor]) -> None:
         """Register executor"""
@@ -82,8 +84,9 @@ __all__ = [
     "executor_registry",
     "BaseExecutor",
     "CompletenessExecutor",
-    "ValidityExecutor",
+    "SchemaExecutor",
     "UniquenessExecutor",
+    "ValidityExecutor",
 ]
 
 """
