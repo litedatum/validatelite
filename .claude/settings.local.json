@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(python:*)",
-      "Bash(black:*)"
+      "Bash(black:*)",
+      "Bash(mypy:*)"
     ],
     "deny": [],
     "ask": []
