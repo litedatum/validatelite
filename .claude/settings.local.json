@@ -3,7 +3,10 @@
     "allow": [
       "Bash(python:*)",
       "Bash(black:*)",
-      "Bash(mypy:*)"
+      "Bash(mypy:*)",
+      "Bash(pytest:*)",
+      "Bash(tree:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

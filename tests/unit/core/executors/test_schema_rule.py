@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from core.executors.validity_executor import ValidityExecutor
+from core.executors.schema_executor import SchemaExecutor
 from shared.enums import RuleType
 from shared.exceptions.exception_system import RuleExecutionError
 from shared.schema.connection_schema import ConnectionSchema
@@ -43,7 +43,7 @@ async def test_schema_rule_pass(mock_connection: ConnectionSchema) -> None:
         }
     )
 
-    executor = ValidityExecutor(mock_connection, test_mode=True)
+    executor = SchemaExecutor(mock_connection, test_mode=True)
 
     # Mock column list to match expected types
     columns = [
@@ -80,7 +80,7 @@ async def test_schema_rule_missing_and_type_mismatch(
         }
     )
 
-    executor = ValidityExecutor(mock_connection, test_mode=True)
+    executor = SchemaExecutor(mock_connection, test_mode=True)
 
     # Actual has email wrong type and missing created_at
     columns = [
@@ -110,7 +110,7 @@ async def test_schema_rule_strict_mode_counts_extras(
     mock_connection: ConnectionSchema,
 ) -> None:
     rule = build_schema_rule({"id": {"expected_type": "INTEGER"}}, strict_mode=True)
-    executor = ValidityExecutor(mock_connection, test_mode=True)
+    executor = SchemaExecutor(mock_connection, test_mode=True)
 
     columns = [
         {"name": "id", "type": "INTEGER"},
@@ -144,7 +144,7 @@ async def test_schema_rule_case_insensitive_matching(
         {"Email": {"expected_type": "STRING"}}, strict_mode=False, case_insensitive=True
     )
 
-    executor = ValidityExecutor(mock_connection, test_mode=True)
+    executor = SchemaExecutor(mock_connection, test_mode=True)
 
     columns = [
         {"name": "email", "type": "VARCHAR(255)"},
