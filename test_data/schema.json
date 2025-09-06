@@ -2,11 +2,24 @@
   "customers": {
     "rules": [
       { "field": "id", "type": "integer", "required": true },
-      { "field": "age", "type": "integer", "required": true, "min": 0, "max": 120 },
+      { "field": "age", "type": "float", "required": true, "min": 0, "max": 120 },
       { "field": "gender", "type": "integer", "enum": [0, 1] },
       { "field": "name", "type": "string", "required": true },
       { "field": "invalid_col", "type": "string", "required": true },
       { "field": "email", "type": "string" }
     ]
+  },
+  "orders": {
+    "rules": [
+      { "field": "id", "type": "integer", "required": true },
+      { "field": "customer_id", "type": "integer", "required": true },
+      { "field": "product_name", "type": "string", "max_length": 255, "required": true },
+      { "field": "quantity", "type": "integer", "required": true },
+      { "field": "price", "type": "float", "precision": 10, "scale": 2, "required": true },
+      { "field": "status", "type": "string", "max_length": 50, "required": true },
+      { "field": "order_date", "type": "date", "required": true }
+    ],
+    "strict_mode": false,
+    "case_insensitive": true
   }
 }

@@ -138,12 +138,46 @@ class SchemaExecutor(BaseExecutor):
             target = rule.get_target_info()
             database = target.get("database")
 
-            actual_columns = await query_executor.get_column_list(
-                table_name=table_name,
-                database=database,
-                entity_name=table_name,
-                rule_id=rule.id,
-            )
+            try:
+                actual_columns = await query_executor.get_column_list(
+                    table_name=table_name,
+                    database=database,
+                    entity_name=table_name,
+                    rule_id=rule.id,
+                )
+            except Exception as table_error:
+                # Table doesn't exist or cannot be accessed
+                # Return a table-level failure without column-level details
+                execution_time = time.time() - start_time
+                total_declared = len(columns_cfg)
+                
+                dataset_metric = DatasetMetrics(
+                    entity_name=table_name,
+                    total_records=0,  # No records exist if table doesn't exist
+                    failed_records=total_declared,  # All checks fail if table doesn't exist
+                    processing_time=execution_time,
+                )
+
+                return ExecutionResultSchema(
+                    rule_id=rule.id,
+                    status="FAILED",
+                    dataset_metrics=[dataset_metric],
+                    execution_time=execution_time,
+                    execution_message=f"Table '{table_name}' does not exist or cannot be accessed",
+                    error_message=str(table_error),
+                    sample_data=None,
+                    cross_db_metrics=None,
+                    execution_plan={
+                        "execution_type": "metadata",
+                        "schema_details": {
+                            "field_results": [],  # No field-level results when table doesn't exist
+                            "extras": [],
+                            "table_exists": False,
+                        },
+                    },
+                    started_at=datetime.fromtimestamp(start_time),
+                    ended_at=datetime.fromtimestamp(time.time()),
+                )
 
             def key_of(name: str) -> str:
                 return name.lower() if case_insensitive else name
@@ -332,6 +366,7 @@ class SchemaExecutor(BaseExecutor):
                     "schema_details": {
                         "field_results": field_results,
                         "extras": sorted(extras) if extras else [],
+                        "table_exists": True,
                     },
                 },
                 started_at=datetime.fromtimestamp(start_time),

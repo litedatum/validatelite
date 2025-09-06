@@ -484,6 +484,7 @@ def _build_prioritized_atomic_status(
     schema_failures: Dict[str, str] = (
         {}
     )  # Key: f"{table}.{column}", Value: failure_code
+    table_not_exists: set[str] = set()  # Set of table names that don't exist
 
     schema_rules_map = {
         str(rule.id): rule for rule in atomic_rules if rule.type == RuleType.SCHEMA
@@ -496,30 +497,38 @@ def _build_prioritized_atomic_status(
             continue
 
         table = rule.get_target_info().get("table", "")
-        details = (
-            res.get("execution_plan", {})
-            .get("schema_details", {})
-            .get("field_results", [])
-        )
-
-        for item in details:
+        
+        # Check if table exists based on schema details
+        schema_details = res.get("execution_plan", {}).get("schema_details", {})
+        table_exists = schema_details.get("table_exists", True)
+        
+        if not table_exists:
+            # Table doesn't exist - mark all rules for this table to be skipped
+            table_not_exists.add(table)
+            continue
+            
+        # Process field-level failures for existing tables
+        field_results = schema_details.get("field_results", [])
+        for item in field_results:
             code = item.get("failure_code")
             if code in ("FIELD_MISSING", "TYPE_MISMATCH"):
                 col = item.get("column")
                 if col:
                     schema_failures[f"{table}.{col}"] = code
 
-    if not schema_failures:
-        return {}
-
+    # Apply skip logic for all non-SCHEMA rules
     for rule in atomic_rules:
         if rule.type == RuleType.SCHEMA:
             continue
 
-        col = rule.get_target_column()
         table = rule.get_target_info().get("table", "")
-
-        if col and f"{table}.{col}" in schema_failures:
+        col = rule.get_target_column()
+        
+        # Skip all rules for tables that don't exist
+        if table in table_not_exists:
+            mapping[str(rule.id)] = {"status": "SKIPPED", "skip_reason": "TABLE_NOT_EXISTS"}
+        # Skip specific column rules that have field-level failures
+        elif col and f"{table}.{col}" in schema_failures:
             reason = schema_failures[f"{table}.{col}"]
             mapping[str(rule.id)] = {"status": "SKIPPED", "skip_reason": reason}
 
@@ -1041,11 +1050,27 @@ def _emit_table_output(
         int(r.get("failed_records", 0) or 0) for r in table_results
     )
 
-    sorted_tables = sorted(tables_grouped.keys())
+    # Check which tables don't exist based on skip reasons
+    tables_not_exist = set()
+    for rule_id, skip_info in skip_map.items():
+        if skip_info.get("skip_reason") == "TABLE_NOT_EXISTS":
+            rule = rule_map.get(rule_id)
+            if rule and rule.target and rule.target.entities:
+                table_name = rule.target.entities[0].table
+                tables_not_exist.add(table_name)
+
+    # Include all tables (existing and non-existing) in sorted output
+    all_table_names = set(tables_grouped.keys()) | tables_not_exist
+    sorted_tables = sorted(all_table_names)
 
     for table_name in sorted_tables:
         records = table_records.get(table_name, 0)
         lines.append(f"\n📋 Table: {table_name} ({records:,} records)")
+
+        # If table doesn't exist, show only that error
+        if table_name in tables_not_exist:
+            lines.append("✗ Table does not exist or cannot be accessed")
+            continue
 
         table_grouped = tables_grouped[table_name]
         ordered_columns = all_columns_by_table.get(table_name, [])
