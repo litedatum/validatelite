@@ -530,10 +530,12 @@ def _build_prioritized_atomic_status(
                 "status": "SKIPPED",
                 "skip_reason": "TABLE_NOT_EXISTS",
             }
-        # Skip specific column rules that have field-level failures
+        # Skip specific column rules only when field is missing
         elif col and f"{table}.{col}" in schema_failures:
             reason = schema_failures[f"{table}.{col}"]
-            mapping[str(rule.id)] = {"status": "SKIPPED", "skip_reason": reason}
+            # Only skip for missing fields, not for type mismatches
+            if reason == "FIELD_MISSING":
+                mapping[str(rule.id)] = {"status": "SKIPPED", "skip_reason": reason}
 
     return mapping
 
@@ -1128,8 +1130,8 @@ def _emit_table_output(
                         issue_descs.append(f"{check} failed ({fr} failures)")
                 elif status == "SKIPPED":
                     skip_reason = i.get("skip_reason")
-                    if skip_reason == "TYPE_MISMATCH":
-                        issue_descs.append("type mismatch (skipped dependent checks)")
+                    if skip_reason == "FIELD_MISSING":
+                        issue_descs.append(f"{check} skipped (field missing)")
                     else:
                         reason_text = skip_reason or "unknown reason"
                         issue_descs.append(f"{check} skipped ({reason_text})")

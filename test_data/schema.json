@@ -13,9 +13,9 @@
     "rules": [
       { "field": "id", "type": "integer", "required": true },
       { "field": "customer_id", "type": "integer", "required": true },
-      { "field": "product_name", "type": "string", "max_length": 255, "required": true },
+      { "field": "product_name", "type": "string", "max_length": 155, "required": true },
       { "field": "quantity", "type": "integer", "required": true },
-      { "field": "price", "type": "float", "precision": 10, "scale": 2, "required": true },
+      { "field": "price", "type": "float", "precision": 8, "scale": 2, "required": true},
       { "field": "status", "type": "string", "max_length": 50, "required": true },
       { "field": "order_date", "type": "date", "required": true }
     ],
