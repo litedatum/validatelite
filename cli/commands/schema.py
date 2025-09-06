@@ -1047,6 +1047,10 @@ def _emit_table_output(
                 tables_grouped[table_name][col]["issues"].append(
                     {"check": "type", "status": "FAILED"}
                 )
+            elif item.get("failure_code") == "METADATA_MISMATCH":
+                tables_grouped[table_name][col]["issues"].append(
+                    {"check": "metadata", "status": "FAILED"}
+                )
 
     lines: List[str] = []
     lines.append(f"✓ Checking {source}")
@@ -1127,7 +1131,11 @@ def _emit_table_output(
                     if status == "ERROR":
                         issue_descs.append(f"{check} error")
                     else:
-                        issue_descs.append(f"{check} failed ({fr} failures)")
+                        # For structural validation issues (type, metadata), don't show record counts
+                        if check in {"type", "metadata"}:
+                            issue_descs.append(f"{check} failed")
+                        else:
+                            issue_descs.append(f"{check} failed ({fr} failures)")
                 elif status == "SKIPPED":
                     skip_reason = i.get("skip_reason")
                     if skip_reason == "FIELD_MISSING":
