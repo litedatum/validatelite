@@ -24,22 +24,33 @@ from tests.shared.utils.database_utils import (
 )
 
 
-def generate_order_data(customer_count: int = 1000, orders_per_customer: int = 3) -> List[Tuple]:
+def generate_order_data(
+    customer_count: int = 1000, orders_per_customer: int = 3
+) -> List[Tuple]:
     """
     Generate test order data with specific patterns to ensure test cases pass/fail consistently.
     """
     # Products and statuses designed to work with our schema validation tests
-    products = ["Laptop", "Phone", "Tablet", "Mouse", "Keyboard", "Monitor", "Headphones", "Camera"]
+    products = [
+        "Laptop",
+        "Phone",
+        "Tablet",
+        "Mouse",
+        "Keyboard",
+        "Monitor",
+        "Headphones",
+        "Camera",
+    ]
     # All statuses are <= 50 characters to fit status VARCHAR(50)
     statuses = ["pending", "processing", "shipped", "delivered", "cancelled"]
-    
+
     orders = []
-    
+
     # Generate orders for customer IDs 1 through customer_count
     for customer_id in range(1, customer_count + 1):
         # Generate random number of orders per customer (1 to orders_per_customer)
         num_orders = random.randint(1, orders_per_customer)
-        
+
         for _ in range(num_orders):
             product_name = f"{random.choice(products)} {random.randint(100, 999)}"
             # Generate reasonable quantities (business-valid range)
@@ -47,47 +58,62 @@ def generate_order_data(customer_count: int = 1000, orders_per_customer: int = 3
             # Generate valid prices that fit DECIMAL(10,2) constraints
             # All prices must be valid to avoid database insertion failures
             price = round(random.uniform(10.0, 999.99), 2)
-            
+
             status = random.choice(statuses)
             # Generate valid dates avoiding invalid combinations (e.g., Feb 30)
-            from datetime import date
             import calendar
+            from datetime import date
+
             year = 2024
             month = random.randint(1, 12)
             # Get the maximum valid day for this month/year
             max_day = calendar.monthrange(year, month)[1]
             day = random.randint(1, max_day)
             order_date = date(year, month, day)
-            
+
             # Always use valid customer IDs to avoid foreign key constraint failures
-            orders.append((customer_id, product_name, quantity, price, status, order_date))
-    
+            orders.append(
+                (customer_id, product_name, quantity, price, status, order_date)
+            )
+
     # Add some orders with specific patterns for testing schema validation
     # These patterns should all be DATABASE-VALID (insertable) but may have BUSINESS-LOGIC issues
     from datetime import date
+
     test_date = date(2024, 1, 15)
     test_patterns = [
         # Pattern 1: Valid data for baseline comparison
         (1, "Baseline Product", 1, 99.99, "pending", test_date),
         (2, "Test Product Alpha", 2, 149.50, "processing", test_date),
         (3, "Test Product Beta", 1, 299.99, "shipped", test_date),
-        
         # Pattern 2: Edge case quantities (valid for DB, but may be business-invalid)
         (4, "Edge Case Product", 1, 0.01, "pending", test_date),  # Minimal price
         (5, "Edge Case Product", 100, 999.99, "delivered", test_date),  # High quantity
-        
         # Pattern 3: Long but valid product names and statuses
-        (6, "A" * 200 + " Product", 1, 199.99, "pending", test_date),  # Long but valid product name
+        (
+            6,
+            "A" * 200 + " Product",
+            1,
+            199.99,
+            "pending",
+            test_date,
+        ),  # Long but valid product name
         (7, "Test Product", 1, 99.99, "processing", test_date),  # Standard valid data
-        
         # Pattern 4: Various valid price patterns that fit DECIMAL(10,2)
-        (8, "Precision Test Product", 1, 12345678.99, "pending", test_date),  # Max valid DECIMAL(10,2)
+        (
+            8,
+            "Precision Test Product",
+            1,
+            12345678.99,
+            "pending",
+            test_date,
+        ),  # Max valid DECIMAL(10,2)
         (9, "Small Price Product", 1, 0.01, "delivered", test_date),  # Min valid price
         (10, "Round Price Product", 5, 100.00, "cancelled", test_date),  # Round number
     ]
-    
+
     orders.extend(test_patterns)
-    
+
     return orders
 
 
@@ -265,7 +291,9 @@ def generate_customer_data(count: int = 1000) -> List[Tuple]:
     return customers
 
 
-async def insert_test_data(engine: AsyncEngine, customers: List[Tuple], orders: List[Tuple]) -> None:
+async def insert_test_data(
+    engine: AsyncEngine, customers: List[Tuple], orders: List[Tuple]
+) -> None:
     """Insert test data into the database."""
     async with engine.connect() as conn:
         # Insert customer data

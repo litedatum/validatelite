@@ -19,8 +19,8 @@ from core.engine.prevalidation import Prevalidator
 from core.engine.rule_merger import MergeGroup, RuleMergeManager
 from core.executors import executor_registry
 from shared.database.connection import check_connection, get_engine, retry_connection
-from shared.exceptions import EngineError, RuleExecutionError
 from shared.enums.rule_types import RuleType
+from shared.exceptions import EngineError, RuleExecutionError
 from shared.schema.connection_schema import ConnectionSchema as Connection
 from shared.schema.result_schema import ExecutionResultSchema as ExecutionResult
 from shared.schema.rule_schema import RuleSchema as Rule

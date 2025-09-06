@@ -497,16 +497,16 @@ def _build_prioritized_atomic_status(
             continue
 
         table = rule.get_target_info().get("table", "")
-        
+
         # Check if table exists based on schema details
         schema_details = res.get("execution_plan", {}).get("schema_details", {})
         table_exists = schema_details.get("table_exists", True)
-        
+
         if not table_exists:
             # Table doesn't exist - mark all rules for this table to be skipped
             table_not_exists.add(table)
             continue
-            
+
         # Process field-level failures for existing tables
         field_results = schema_details.get("field_results", [])
         for item in field_results:
@@ -523,10 +523,13 @@ def _build_prioritized_atomic_status(
 
         table = rule.get_target_info().get("table", "")
         col = rule.get_target_column()
-        
+
         # Skip all rules for tables that don't exist
         if table in table_not_exists:
-            mapping[str(rule.id)] = {"status": "SKIPPED", "skip_reason": "TABLE_NOT_EXISTS"}
+            mapping[str(rule.id)] = {
+                "status": "SKIPPED",
+                "skip_reason": "TABLE_NOT_EXISTS",
+            }
         # Skip specific column rules that have field-level failures
         elif col and f"{table}.{col}" in schema_failures:
             reason = schema_failures[f"{table}.{col}"]

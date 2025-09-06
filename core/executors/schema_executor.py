@@ -7,7 +7,7 @@ Handles table-level existence and type checks with prioritization support.
 
 import time
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 from shared.enums.data_types import DataType
 from shared.enums.rule_types import RuleType
@@ -58,32 +58,41 @@ class SchemaExecutor(BaseExecutor):
 
     def _extract_type_metadata(self, vendor_type: str) -> Dict[str, Any]:
         """Extract metadata (length, precision, scale) from vendor-specific type string.
-        
+
         Examples:
         - VARCHAR(255) → {"canonical_type": "STRING", "max_length": 255}
-        - DECIMAL(10,2) → {"canonical_type": "FLOAT", "precision": 10, "scale": 2}  
+        - DECIMAL(10,2) → {"canonical_type": "FLOAT", "precision": 10, "scale": 2}
         - INTEGER → {"canonical_type": "INTEGER"}
         """
         import re
-        
+
         vendor_type = vendor_type.upper().strip()
         metadata = {"canonical_type": None}
-        
+
         # Extract length/precision pattern: TYPE(length) or TYPE(precision,scale)
-        match = re.match(r'^([A-Z_]+)(?:\((\d+)(?:,(\d+))?\))?', vendor_type)
+        match = re.match(r"^([A-Z_]+)(?:\((\d+)(?:,(\d+))?\))?", vendor_type)
         if not match:
             return metadata
-            
+
         base_type = match.group(1)
         length_or_precision = match.group(2)
         scale = match.group(3)
-        
+
         # Map base type to canonical type
-        string_types = {"CHAR", "CHARACTER", "NCHAR", "NVARCHAR", "VARCHAR", "VARCHAR2", "TEXT", "CLOB"}
+        string_types = {
+            "CHAR",
+            "CHARACTER",
+            "NCHAR",
+            "NVARCHAR",
+            "VARCHAR",
+            "VARCHAR2",
+            "TEXT",
+            "CLOB",
+        }
         integer_types = {"INT", "INTEGER", "BIGINT", "SMALLINT", "MEDIUMINT", "TINYINT"}
         float_types = {"FLOAT", "DOUBLE", "REAL", "DECIMAL", "NUMERIC"}
         boolean_types = {"BOOLEAN", "BOOL", "BIT"}
-        
+
         if base_type in string_types:
             metadata["canonical_type"] = DataType.STRING.value
             if length_or_precision:
@@ -100,9 +109,12 @@ class SchemaExecutor(BaseExecutor):
             metadata["canonical_type"] = DataType.BOOLEAN.value
         elif base_type == "DATE":
             metadata["canonical_type"] = DataType.DATE.value
-        elif base_type.startswith("TIMESTAMP") or base_type in {"DATETIME", "DATETIME2"}:
+        elif base_type.startswith("TIMESTAMP") or base_type in {
+            "DATETIME",
+            "DATETIME2",
+        }:
             metadata["canonical_type"] = DataType.DATETIME.value
-            
+
         return metadata
 
     async def _execute_schema_rule(self, rule: RuleSchema) -> ExecutionResultSchema:
@@ -150,7 +162,7 @@ class SchemaExecutor(BaseExecutor):
                 # Return a table-level failure without column-level details
                 execution_time = time.time() - start_time
                 total_declared = len(columns_cfg)
-                
+
                 dataset_metric = DatasetMetrics(
                     entity_name=table_name,
                     total_records=0,  # No records exist if table doesn't exist
@@ -191,65 +203,82 @@ class SchemaExecutor(BaseExecutor):
                 metadata = self._extract_type_metadata(col_type)
                 actual_map[col_name] = {
                     "type": col_type,
-                    "canonical_type": metadata["canonical_type"], 
+                    "canonical_type": metadata["canonical_type"],
                     "max_length": metadata.get("max_length"),
                     "precision": metadata.get("precision"),
-                    "scale": metadata.get("scale")
+                    "scale": metadata.get("scale"),
                 }
 
-            def compare_metadata(expected_cfg: Dict[str, Any], actual_meta: Dict[str, Any]) -> Dict[str, str]:
+            def compare_metadata(
+                expected_cfg: Dict[str, Any], actual_meta: Dict[str, Any]
+            ) -> Dict[str, str]:
                 """Compare expected metadata with actual metadata.
-                
+
                 Returns dict with validation results and failure details.
                 """
                 result = {
                     "type_status": "UNKNOWN",
-                    "metadata_status": "UNKNOWN", 
-                    "failure_details": []
+                    "metadata_status": "UNKNOWN",
+                    "failure_details": [],
                 }
-                
+
                 # Type validation
                 expected_type = expected_cfg.get("expected_type")
                 actual_canonical = actual_meta.get("canonical_type")
-                
+
                 if actual_canonical == expected_type:
                     result["type_status"] = "PASSED"
                 else:
                     result["type_status"] = "FAILED"
-                    result["failure_details"].append(f"Type mismatch: expected {expected_type}, got {actual_canonical}")
-                
+                    result["failure_details"].append(
+                        f"Type mismatch: expected {expected_type}, got {actual_canonical}"
+                    )
+
                 # Only validate metadata if type matches
                 if result["type_status"] == "PASSED":
                     metadata_failures = []
-                    
+
                     # String length validation
-                    if expected_type == DataType.STRING.value and "max_length" in expected_cfg:
+                    if (
+                        expected_type == DataType.STRING.value
+                        and "max_length" in expected_cfg
+                    ):
                         expected_length = expected_cfg["max_length"]
                         actual_length = actual_meta.get("max_length")
                         if actual_length is None:
-                            metadata_failures.append(f"Expected max_length {expected_length}, but actual type has no length limit")
+                            metadata_failures.append(
+                                f"Expected max_length {expected_length}, but actual type has no length limit"
+                            )
                         elif actual_length != expected_length:
-                            metadata_failures.append(f"Length mismatch: expected {expected_length}, got {actual_length}")
-                    
+                            metadata_failures.append(
+                                f"Length mismatch: expected {expected_length}, got {actual_length}"
+                            )
+
                     # Float precision/scale validation
                     if expected_type == DataType.FLOAT.value:
                         if "precision" in expected_cfg:
                             expected_precision = expected_cfg["precision"]
                             actual_precision = actual_meta.get("precision")
                             if actual_precision != expected_precision:
-                                metadata_failures.append(f"Precision mismatch: expected {expected_precision}, got {actual_precision}")
-                        
+                                metadata_failures.append(
+                                    f"Precision mismatch: expected {expected_precision}, got {actual_precision}"
+                                )
+
                         if "scale" in expected_cfg:
                             expected_scale = expected_cfg["scale"]
                             actual_scale = actual_meta.get("scale")
                             if actual_scale != expected_scale:
-                                metadata_failures.append(f"Scale mismatch: expected {expected_scale}, got {actual_scale}")
-                    
-                    result["metadata_status"] = "PASSED" if not metadata_failures else "FAILED"
+                                metadata_failures.append(
+                                    f"Scale mismatch: expected {expected_scale}, got {actual_scale}"
+                                )
+
+                    result["metadata_status"] = (
+                        "PASSED" if not metadata_failures else "FAILED"
+                    )
                     result["failure_details"].extend(metadata_failures)
                 else:
                     result["metadata_status"] = "SKIPPED"
-                
+
                 return result
 
             # Count failures across declared columns and strict-mode extras
@@ -289,11 +318,15 @@ class SchemaExecutor(BaseExecutor):
                 actual_meta = actual_map[lookup_key]
                 expected_cfg = {
                     "expected_type": expected_type,
-                    **{k: v for k, v in cfg.items() if k in ["max_length", "precision", "scale"]}
+                    **{
+                        k: v
+                        for k, v in cfg.items()
+                        if k in ["max_length", "precision", "scale"]
+                    },
                 }
-                
+
                 comparison_result = compare_metadata(expected_cfg, actual_meta)
-                
+
                 if comparison_result["type_status"] == "FAILED":
                     failures += 1
                     field_results.append(
@@ -302,7 +335,7 @@ class SchemaExecutor(BaseExecutor):
                             "existence": "PASSED",
                             "type": "FAILED",
                             "failure_code": "TYPE_MISMATCH",
-                            "failure_details": comparison_result["failure_details"]
+                            "failure_details": comparison_result["failure_details"],
                         }
                     )
                 elif comparison_result["metadata_status"] == "FAILED":
@@ -313,7 +346,7 @@ class SchemaExecutor(BaseExecutor):
                             "existence": "PASSED",
                             "type": "PASSED",
                             "failure_code": "METADATA_MISMATCH",
-                            "failure_details": comparison_result["failure_details"]
+                            "failure_details": comparison_result["failure_details"],
                         }
                     )
                 else:
