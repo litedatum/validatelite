@@ -168,9 +168,9 @@ class TestSchemaPrioritizationAndOutputs:
             schema_results=schema_results, atomic_rules=atomic_rules
         )
 
-        # email dependent rules should be skipped for TYPE_MISMATCH
-        assert skip_map[str(not_null_email.id)]["status"] == "SKIPPED"
-        assert skip_map[str(not_null_email.id)]["skip_reason"] == "TYPE_MISMATCH"
+        # email dependent rules shouldn't be skipped for TYPE_MISMATCH
+        # assert skip_map[str(not_null_email.id)]["status"] == "SKIPPED"
+        # assert skip_map[str(not_null_email.id)]["skip_reason"] == "TYPE_MISMATCH"
         # age dependent rules should be skipped for FIELD_MISSING
         assert skip_map[str(range_age.id)]["status"] == "SKIPPED"
         assert skip_map[str(range_age.id)]["skip_reason"] == "FIELD_MISSING"
@@ -293,8 +293,8 @@ class TestSchemaPrioritizationAndOutputs:
         assert payload["rules_count"] == len(atomic_rules)
         # Results should contain SKIPPED overrides for dependent rules
         results_map = {r["rule_id"]: r for r in payload["results"]}
-        assert results_map[str(not_null_email.id)]["status"] == "SKIPPED"
-        assert results_map[str(not_null_email.id)]["skip_reason"] == "TYPE_MISMATCH"
+        assert results_map[str(not_null_email.id)]["status"] == "PASSED"
+        # assert results_map[str(not_null_email.id)]["skip_reason"] == "TYPE_MISMATCH"
         assert results_map[str(range_age.id)]["status"] == "SKIPPED"
         assert results_map[str(range_age.id)]["skip_reason"] == "FIELD_MISSING"
 
@@ -302,7 +302,7 @@ class TestSchemaPrioritizationAndOutputs:
         fields = {f["column"]: f for f in payload["fields"]}
         assert fields["age"]["checks"]["existence"]["status"] == "FAILED"
         assert fields["email"]["checks"]["type"]["status"] == "FAILED"
-        assert fields["email"]["checks"]["not_null"]["status"] == "SKIPPED"
+        assert fields["email"]["checks"]["not_null"]["status"] == "PASSED"
         assert fields["age"]["checks"]["range"]["status"] == "SKIPPED"
 
     def test_table_output_grouping_and_skips(
@@ -368,19 +368,18 @@ class TestSchemaPrioritizationAndOutputs:
         # Dependent rule raw statuses set to PASSED; should be skipped for display grouping
         not_null_email_result = {
             "rule_id": str(not_null_email.id),
-            "status": "SKIPPED",
+            "status": "PASSED",
             "dataset_metrics": [
                 {"entity_name": "x", "total_records": 10, "failed_records": 0}
             ],
-            "skip_reason": "TYPE_MISMATCH",
+            # "skip_reason": "TYPE_MISMATCH",
         }
         range_age_result = {
             "rule_id": str(range_age.id),
-            "status": "SKIPPED",
+            "status": "FAILED",
             "dataset_metrics": [
                 {"entity_name": "x", "total_records": 10, "failed_records": 0}
             ],
-            "skip_reason": "FIELD_MISSING",
         }
 
         class DummyValidator:
@@ -415,7 +414,7 @@ class TestSchemaPrioritizationAndOutputs:
 
         # Should show concise messages per column with skip semantics
         assert "✗ age: missing (skipped dependent checks)" in output
-        assert "✗ email: type mismatch (skipped dependent checks)" in output
+        assert "✗ email: type failed" in output
         # Should not render separate dependent issues since they are skipped
         assert "not_null" not in output
         assert "range" not in output

@@ -160,6 +160,59 @@ def _validate_single_rule_item(item: Dict[str, Any], context: str) -> None:
                     f"{context}.{bound_key} must be numeric when provided"
                 )
 
+    # max_length
+    if "max_length" in item:
+        value = item["max_length"]
+        if not isinstance(value, int) or value < 0:
+            raise click.UsageError(
+                f"{context}.max_length must be a non-negative integer when provided"
+            )
+        # Validate max_length is only for string types
+        type_name = item.get("type", "").lower() if item.get("type") else None
+        if type_name and type_name != "string":
+            raise click.UsageError(
+                f"{context}.max_length can only be specified for 'string' type "
+                f"fields, not '{type_name}'"
+            )
+
+    # precision
+    if "precision" in item:
+        value = item["precision"]
+        if not isinstance(value, int) or value < 0:
+            raise click.UsageError(
+                f"{context}.precision must be a non-negative integer when provided"
+            )
+        # Validate precision is only for float types
+        type_name = item.get("type", "").lower() if item.get("type") else None
+        if type_name and type_name != "float":
+            raise click.UsageError(
+                f"{context}.precision can only be specified for 'float' type "
+                f"fields, not '{type_name}'"
+            )
+
+    # scale
+    if "scale" in item:
+        value = item["scale"]
+        if not isinstance(value, int) or value < 0:
+            raise click.UsageError(
+                f"{context}.scale must be a non-negative integer when provided"
+            )
+        # Validate scale is only for float types
+        type_name = item.get("type", "").lower() if item.get("type") else None
+        if type_name and type_name != "float":
+            raise click.UsageError(
+                f"{context}.scale can only be specified for 'float' type "
+                f"fields, not '{type_name}'"
+            )
+        # Validate scale <= precision when both are specified
+        if "precision" in item:
+            precision_val = item["precision"]
+            if isinstance(precision_val, int) and value > precision_val:
+                raise click.UsageError(
+                    f"{context}.scale ({value}) cannot be greater than precision "
+                    f"({precision_val})"
+                )
+
 
 def _validate_rules_payload(payload: Any) -> Tuple[List[str], int]:
     """Validate the minimal structure of the schema rules file.
@@ -326,10 +379,25 @@ def _decompose_single_table_schema(
             # Should have been validated earlier; keep defensive check
             raise click.UsageError("Each rule item must have a non-empty 'field'")
 
-        # SCHEMA: type contributes expected_type
+        # SCHEMA: collect column metadata
+        column_metadata = {}
+
+        # Add expected_type if type is specified
         if "type" in item and item["type"] is not None:
             dt = _map_type_name_to_datatype(str(item["type"]))
-            columns_map[field_name] = {"expected_type": dt.value}
+            column_metadata["expected_type"] = dt.value
+
+        # Add metadata fields if present
+        if "max_length" in item:
+            column_metadata["max_length"] = item["max_length"]
+        if "precision" in item:
+            column_metadata["precision"] = item["precision"]
+        if "scale" in item:
+            column_metadata["scale"] = item["scale"]
+
+        # Only add to columns_map if we have any metadata to store
+        if column_metadata:
+            columns_map[field_name] = column_metadata
 
         # NOT_NULL
         if bool(item.get("required", False)):
@@ -416,6 +484,7 @@ def _build_prioritized_atomic_status(
     schema_failures: Dict[str, str] = (
         {}
     )  # Key: f"{table}.{column}", Value: failure_code
+    table_not_exists: set[str] = set()  # Set of table names that don't exist
 
     schema_rules_map = {
         str(rule.id): rule for rule in atomic_rules if rule.type == RuleType.SCHEMA
@@ -428,32 +497,45 @@ def _build_prioritized_atomic_status(
             continue
 
         table = rule.get_target_info().get("table", "")
-        details = (
-            res.get("execution_plan", {})
-            .get("schema_details", {})
-            .get("field_results", [])
-        )
 
-        for item in details:
+        # Check if table exists based on schema details
+        schema_details = res.get("execution_plan", {}).get("schema_details", {})
+        table_exists = schema_details.get("table_exists", True)
+
+        if not table_exists and table:
+            # Table doesn't exist - mark all rules for this table to be skipped
+            table_not_exists.add(table)
+            continue
+
+        # Process field-level failures for existing tables
+        field_results = schema_details.get("field_results", [])
+        for item in field_results:
             code = item.get("failure_code")
             if code in ("FIELD_MISSING", "TYPE_MISMATCH"):
                 col = item.get("column")
                 if col:
                     schema_failures[f"{table}.{col}"] = code
 
-    if not schema_failures:
-        return {}
-
+    # Apply skip logic for all non-SCHEMA rules
     for rule in atomic_rules:
         if rule.type == RuleType.SCHEMA:
             continue
 
-        col = rule.get_target_column()
         table = rule.get_target_info().get("table", "")
+        col = rule.get_target_column()
 
-        if col and f"{table}.{col}" in schema_failures:
+        # Skip all rules for tables that don't exist
+        if table in table_not_exists:
+            mapping[str(rule.id)] = {
+                "status": "SKIPPED",
+                "skip_reason": "TABLE_NOT_EXISTS",
+            }
+        # Skip specific column rules only when field is missing
+        elif col and f"{table}.{col}" in schema_failures:
             reason = schema_failures[f"{table}.{col}"]
-            mapping[str(rule.id)] = {"status": "SKIPPED", "skip_reason": reason}
+            # Only skip for missing fields, not for type mismatches
+            if reason == "FIELD_MISSING":
+                mapping[str(rule.id)] = {"status": "SKIPPED", "skip_reason": reason}
 
     return mapping
 
@@ -947,7 +1029,7 @@ def _emit_table_output(
             continue
 
         table_name = rule.get_target_info().get("table")
-        if not table_name or table_name not in tables_grouped:
+        if table_name is None or table_name not in tables_grouped:
             continue
 
         execution_plan = schema_result.get("execution_plan") or {}
@@ -965,6 +1047,10 @@ def _emit_table_output(
                 tables_grouped[table_name][col]["issues"].append(
                     {"check": "type", "status": "FAILED"}
                 )
+            elif item.get("failure_code") == "METADATA_MISMATCH":
+                tables_grouped[table_name][col]["issues"].append(
+                    {"check": "metadata", "status": "FAILED"}
+                )
 
     lines: List[str] = []
     lines.append(f"✓ Checking {source}")
@@ -973,11 +1059,27 @@ def _emit_table_output(
         int(r.get("failed_records", 0) or 0) for r in table_results
     )
 
-    sorted_tables = sorted(tables_grouped.keys())
+    # Check which tables don't exist based on skip reasons
+    tables_not_exist = set()
+    for rule_id, skip_info in skip_map.items():
+        if skip_info.get("skip_reason") == "TABLE_NOT_EXISTS":
+            rule = rule_map.get(rule_id)
+            if rule and rule.target and rule.target.entities:
+                table_name = rule.target.entities[0].table
+                tables_not_exist.add(table_name)
+
+    # Include all tables (existing and non-existing) in sorted output
+    all_table_names = set(tables_grouped.keys()) | tables_not_exist
+    sorted_tables = sorted(all_table_names)
 
     for table_name in sorted_tables:
         records = table_records.get(table_name, 0)
         lines.append(f"\n📋 Table: {table_name} ({records:,} records)")
+
+        # If table doesn't exist, show only that error
+        if table_name in tables_not_exist:
+            lines.append("✗ Table does not exist or cannot be accessed")
+            continue
 
         table_grouped = tables_grouped[table_name]
         ordered_columns = all_columns_by_table.get(table_name, [])
@@ -1029,11 +1131,16 @@ def _emit_table_output(
                     if status == "ERROR":
                         issue_descs.append(f"{check} error")
                     else:
-                        issue_descs.append(f"{check} failed ({fr} failures)")
+                        # For structural validation issues (type, metadata),
+                        # don't show record counts
+                        if check in {"type", "metadata"}:
+                            issue_descs.append(f"{check} failed")
+                        else:
+                            issue_descs.append(f"{check} failed ({fr} failures)")
                 elif status == "SKIPPED":
                     skip_reason = i.get("skip_reason")
-                    if skip_reason == "TYPE_MISMATCH":
-                        issue_descs.append("type mismatch (skipped dependent checks)")
+                    if skip_reason == "FIELD_MISSING":
+                        issue_descs.append(f"{check} skipped (field missing)")
                     else:
                         reason_text = skip_reason or "unknown reason"
                         issue_descs.append(f"{check} skipped ({reason_text})")

@@ -19,6 +19,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - None
 
+## [0.4.3] - 2025-09-06
+
+### Added
+- feat(schema): Enhanced SCHEMA rule with metadata validation capabilities
+- feat(schema): String length validation via `max_length` parameter for precise VARCHAR constraints
+- feat(schema): Float precision and scale validation via `precision`/`scale` parameters for DECIMAL constraints
+- feat(cli): Extended JSON schema format support with metadata fields (max_length, precision, scale)
+- feat(core): Database-agnostic metadata extraction across MySQL, PostgreSQL, and SQLite
+- feat(core): Vendor-specific type parsing with regex-based metadata extraction
+- feat(core): Performance-optimized validation using database catalog queries (no data scanning)
+- feat(validation): Comprehensive metadata comparison logic with detailed failure reporting
+- feat(cli): Enhanced rule parameter validation for metadata fields with logical constraints
+- feat(tests): Comprehensive metadata validation test suite (87% coverage on SchemaExecutor)
+- feat(tests): Unit, integration, and CLI tests for metadata validation scenarios
+- feat(docs): Enhanced documentation with metadata validation examples and troubleshooting guide
+- feat(docs): Migration guide for legacy schema formats and performance characteristics
+
+### Changed
+- refactor(schema): Enhanced SchemaExecutor with metadata validation capabilities
+- refactor(cli): Extended CLI schema parsing to support metadata fields with validation
+- refactor(core): Improved database metadata extraction and type mapping
+- improve(performance): Metadata validation uses single database query per table (no data scans)
+- improve(validation): Enhanced error messages with specific metadata mismatch descriptions
+- improve(architecture): Clear separation between structure validation (SCHEMA) and content validation (RANGE/ENUM)
+
+### Fixed
+- None
+
+### Removed
+- None
+
+### Migration Guide
+- **Backward Compatibility**: Existing schema files without metadata continue to work unchanged
+- **Enhanced Validation**: Add `max_length`, `precision`, and `scale` fields incrementally to existing schemas
+- **Performance**: Metadata validation provides superior performance vs scanning-based approaches
+- **Architecture**: Enhanced SCHEMA rule eliminates need for separate LENGTH rule type
+
 ## [0.4.2] - 2025-08-27
 
 ### Added

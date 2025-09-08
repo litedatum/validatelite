@@ -188,6 +188,9 @@ class TestQueryExecutor:
             "extra": "auto_increment",
             "nullable": False,
             "default": None,
+            "character_maximum_length": None,
+            "numeric_precision": None,
+            "numeric_scale": None,
             "original": {
                 "column_name": "id",
                 "data_type": "INTEGER",
@@ -205,6 +208,9 @@ class TestQueryExecutor:
             "extra": "",
             "nullable": True,
             "default": None,
+            "character_maximum_length": None,
+            "numeric_precision": None,
+            "numeric_scale": None,
             "original": {
                 "column_name": "name",
                 "data_type": "VARCHAR",
