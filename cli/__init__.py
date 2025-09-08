@@ -5,7 +5,7 @@ Command-line interface for the data quality validation tool.
 Provides a unified `vlite check` command for data quality checking.
 """
 
-__version__ = "0.4.2"
+__version__ = "0.4.3"
 
 from .app import cli_app
 

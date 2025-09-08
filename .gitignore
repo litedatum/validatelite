@@ -79,3 +79,7 @@ site/
 
 # Cursor
 .cursor/
+
+# Claude Code
+CLAUDE.md
+.claude/

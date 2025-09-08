@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from core.executors.validity_executor import ValidityExecutor
+from core.executors.schema_executor import SchemaExecutor
 from shared.enums import ConnectionType, RuleType
 from shared.schema.connection_schema import ConnectionSchema
 from shared.schema.rule_schema import RuleSchema
@@ -40,7 +40,7 @@ async def test_sqlite_text_maps_to_string(mock_connection: ConnectionSchema) -> 
     # TEXT should satisfy expected STRING
     rule = build_schema_rule({"name": {"expected_type": "STRING"}})
 
-    executor = ValidityExecutor(mock_connection, test_mode=True)
+    executor = SchemaExecutor(mock_connection, test_mode=True)
     sqlite_cols = [{"name": "name", "type": "TEXT"}]
 
     with patch.object(executor, "get_engine") as mock_get_engine, patch(
@@ -69,7 +69,7 @@ async def test_sqlite_integer_and_real_type_mapping(
         }
     )
 
-    executor = ValidityExecutor(mock_connection, test_mode=True)
+    executor = SchemaExecutor(mock_connection, test_mode=True)
     sqlite_cols = [
         {"name": "id", "type": "INTEGER"},
         {"name": "value", "type": "REAL"},
@@ -105,7 +105,7 @@ async def test_sqlite_dates_are_text_unless_explicit_cast(
         }
     )
 
-    executor = ValidityExecutor(mock_connection, test_mode=True)
+    executor = SchemaExecutor(mock_connection, test_mode=True)
     sqlite_cols = [
         {"name": "reg_date", "type": "TEXT"},
         {"name": "ts", "type": "TEXT"},

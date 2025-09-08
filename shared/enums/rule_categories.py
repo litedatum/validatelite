@@ -185,7 +185,7 @@ class RuleCategory(str, Enum):
             cls.COMPLETENESS: ["NOT_NULL"],
             cls.ACCURACY: ["REGEX", "EMAIL", "PHONE", "URL", "DATE_FORMAT"],
             cls.CONSISTENCY: ["FOREIGN_KEY"],
-            cls.VALIDITY: ["RANGE", "LENGTH", "ENUM", "MIN_MAX"],
+            cls.VALIDITY: ["RANGE", "ENUM", "SCHEMA"],
             cls.UNIQUENESS: ["UNIQUE", "PRIMARY_KEY"],
             cls.TIMELINESS: [],  # No specific timeliness rule types for now
             cls.CUSTOM: ["CUSTOM_SQL", "BUSINESS_RULE"],

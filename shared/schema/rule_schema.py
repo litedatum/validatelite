@@ -335,17 +335,111 @@ class RuleSchema(RuleBase):
                         "SCHEMA rule"
                     )
                 try:
-                    DataType(str(cfg["expected_type"]).upper())
+                    expected_type = DataType(str(cfg["expected_type"]).upper())
                 except Exception:
                     raise RuleExecutionError(
                         f"Unsupported expected_type for SCHEMA column '{col_name}': "
                         f"{cfg.get('expected_type')}"
                     )
 
+                # Validate metadata fields when specified
+                self._validate_schema_column_metadata(col_name, cfg, expected_type)
+
         # elif self.type == RuleType.CUSTOM_SQL:  # not supported in current version
         #     sql_query = params.get('sql_query') or params.get('custom_sql')
         #     if not sql_query:
         #         raise ValueError("CUSTOM_SQL rule requires sql_query parameter")
+
+    def _validate_schema_column_metadata(
+        self, col_name: str, cfg: Dict[str, Any], expected_type: DataType
+    ) -> None:
+        """Validate metadata fields for a SCHEMA column configuration.
+
+        Args:
+            col_name: Column name for error messages
+            cfg: Column configuration dict
+            expected_type: Validated DataType enum value
+        """
+        # Validate max_length for STRING types
+        if "max_length" in cfg:
+            max_length = cfg["max_length"]
+
+            # Check data type appropriateness
+            if not isinstance(max_length, int) or max_length <= 0:
+                raise RuleExecutionError(
+                    f"SCHEMA column '{col_name}': max_length must be a positive integer"
+                )
+
+            # Check reasonable limits (avoid extremely large values)
+            if max_length > 1000000:  # 1MB character limit
+                raise RuleExecutionError(
+                    f"SCHEMA column '{col_name}': max_length ({max_length}) exceeds "
+                    "reasonable limit of 1,000,000 characters"
+                )
+
+            # Ensure max_length is only specified for STRING types
+            if expected_type != DataType.STRING:
+                raise RuleExecutionError(
+                    f"SCHEMA column '{col_name}': max_length can only be specified "
+                    f"for STRING type, not {expected_type.value}"
+                )
+
+        # Validate precision for FLOAT types
+        if "precision" in cfg:
+            precision = cfg["precision"]
+
+            # Check data type appropriateness
+            if not isinstance(precision, int) or precision <= 0:
+                raise RuleExecutionError(
+                    f"SCHEMA column '{col_name}': precision must be a positive integer"
+                )
+
+            # Check reasonable limits
+            if precision > 65:  # MySQL DECIMAL max precision
+                raise RuleExecutionError(
+                    f"SCHEMA column '{col_name}': precision ({precision}) exceeds "
+                    "reasonable limit of 65 digits"
+                )
+
+            # Ensure precision is only specified for FLOAT types
+            if expected_type != DataType.FLOAT:
+                raise RuleExecutionError(
+                    f"SCHEMA column '{col_name}': precision can only be specified "
+                    f"for FLOAT type, not {expected_type.value}"
+                )
+
+        # Validate scale for FLOAT types
+        if "scale" in cfg:
+            scale = cfg["scale"]
+
+            # Check data type appropriateness
+            if not isinstance(scale, int) or scale < 0:
+                raise RuleExecutionError(
+                    f"SCHEMA column '{col_name}': scale must be a non-negative integer"
+                )
+
+            # Check reasonable limits
+            if scale > 30:  # MySQL DECIMAL max scale
+                raise RuleExecutionError(
+                    f"SCHEMA column '{col_name}': scale ({scale}) exceeds "
+                    "reasonable limit of 30 digits"
+                )
+
+            # Ensure scale is only specified for FLOAT types
+            if expected_type != DataType.FLOAT:
+                raise RuleExecutionError(
+                    f"SCHEMA column '{col_name}': scale can only be specified "
+                    f"for FLOAT type, not {expected_type.value}"
+                )
+
+            # Check logical constraint: precision >= scale
+            if "precision" in cfg:
+                precision = cfg["precision"]
+                if isinstance(precision, int) and scale > precision:
+                    raise RuleExecutionError(
+                        f"SCHEMA column '{col_name}': scale ({scale}) cannot be "
+                        f"greater than precision ({precision})"
+                    )
 
     def get_rule_category_name(self) -> str:
         """Get rule category name"""

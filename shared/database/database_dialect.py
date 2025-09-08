@@ -476,7 +476,14 @@ class PostgreSQLDialect(DatabaseDialect):
         """Get PostgreSQL column list"""
         if schema:
             sql = """
-                SELECT column_name, data_type, is_nullable, column_default
+                SELECT
+                    column_name,
+                    data_type,
+                    is_nullable,
+                    column_default,
+                    character_maximum_length,
+                    numeric_precision,
+                    numeric_scale
                 FROM information_schema.columns
                 WHERE table_name = :table AND table_schema = :schema
                 ORDER BY ordinal_position
@@ -484,7 +491,14 @@ class PostgreSQLDialect(DatabaseDialect):
             params = {"table": table, "schema": schema}
         else:
             sql = """
-                SELECT column_name, data_type, is_nullable, column_default
+                SELECT
+                    column_name,
+                    data_type,
+                    is_nullable,
+                    column_default,
+                    character_maximum_length,
+                    numeric_precision,
+                    numeric_scale
                 FROM information_schema.columns
                 WHERE table_name = :table AND table_schema = 'public'
                 ORDER BY ordinal_position

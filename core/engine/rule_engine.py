@@ -19,6 +19,7 @@ from core.engine.prevalidation import Prevalidator
 from core.engine.rule_merger import MergeGroup, RuleMergeManager
 from core.executors import executor_registry
 from shared.database.connection import check_connection, get_engine, retry_connection
+from shared.enums.rule_types import RuleType
 from shared.exceptions import EngineError, RuleExecutionError
 from shared.schema.connection_schema import ConnectionSchema as Connection
 from shared.schema.result_schema import ExecutionResultSchema as ExecutionResult
@@ -712,8 +713,14 @@ class RuleEngine:
             )
 
             if not table_exists:
-                rule.validation_error = f"Table {entity_key} does not exist"
-                invalid_rules.append(rule)
+                # For table-not-exists scenario:
+                # - Allow SCHEMA rules to execute (they can report table doesn't exist)
+                # - Skip other rule types (NOT_NULL, RANGE, ENUM, etc.)
+                if rule.type == RuleType.SCHEMA:
+                    valid_rules.append(rule)
+                else:
+                    rule.validation_error = f"Table {entity_key} does not exist"
+                    invalid_rules.append(rule)
             elif column and not column_exists:
                 rule.validation_error = f"Column {column_key} does not exist"
                 invalid_rules.append(rule)
