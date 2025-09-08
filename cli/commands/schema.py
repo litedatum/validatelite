@@ -502,7 +502,7 @@ def _build_prioritized_atomic_status(
         schema_details = res.get("execution_plan", {}).get("schema_details", {})
         table_exists = schema_details.get("table_exists", True)
 
-        if not table_exists:
+        if not table_exists and table:
             # Table doesn't exist - mark all rules for this table to be skipped
             table_not_exists.add(table)
             continue
@@ -1029,7 +1029,7 @@ def _emit_table_output(
             continue
 
         table_name = rule.get_target_info().get("table")
-        if not table_name or table_name not in tables_grouped:
+        if table_name is None or table_name not in tables_grouped:
             continue
 
         execution_plan = schema_result.get("execution_plan") or {}
@@ -1131,7 +1131,8 @@ def _emit_table_output(
                     if status == "ERROR":
                         issue_descs.append(f"{check} error")
                     else:
-                        # For structural validation issues (type, metadata), don't show record counts
+                        # For structural validation issues (type, metadata),
+                        # don't show record counts
                         if check in {"type", "metadata"}:
                             issue_descs.append(f"{check} failed")
                         else:

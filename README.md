@@ -126,6 +126,97 @@ vlite schema --conn "sales_data.csv" --rules csv_schema.json --output json
 - `date` - Date only (DATE)
 - `datetime` - Date and time (DATETIME, TIMESTAMP)
 
+### Enhanced Schema Validation with Metadata
+
+ValidateLite now supports **metadata validation** for precise schema enforcement without scanning table data. This provides superior performance by validating column constraints directly from database metadata.
+
+**Metadata Validation Features:**
+- **String Length Validation**: Validate `max_length` for string columns
+- **Float Precision Validation**: Validate `precision` and `scale` for decimal columns
+- **Database-Agnostic**: Works across MySQL, PostgreSQL, and SQLite
+- **Performance Optimized**: Uses database catalog queries, not data scans
+
+**Enhanced Schema Examples:**
+
+**String Metadata Validation:**
+```json
+{
+  "users": {
+    "rules": [
+      {
+        "field": "username",
+        "type": "string",
+        "max_length": 50,
+        "required": true
+      },
+      {
+        "field": "email",
+        "type": "string",
+        "max_length": 255,
+        "required": true
+      },
+      {
+        "field": "biography",
+        "type": "string",
+        "max_length": 1000
+      }
+    ]
+  }
+}
+```
+
+**Float Precision Validation:**
+```json
+{
+  "products": {
+    "rules": [
+      {
+        "field": "price",
+        "type": "float",
+        "precision": 10,
+        "scale": 2,
+        "required": true
+      },
+      {
+        "field": "weight",
+        "type": "float",
+        "precision": 8,
+        "scale": 3
+      }
+    ]
+  }
+}
+```
+
+**Mixed Metadata Schema:**
+```json
+{
+  "orders": {
+    "rules": [
+      { "field": "id", "type": "integer", "required": true },
+      {
+        "field": "customer_name",
+        "type": "string",
+        "max_length": 100,
+        "required": true
+      },
+      {
+        "field": "total_amount",
+        "type": "float",
+        "precision": 12,
+        "scale": 2,
+        "required": true
+      },
+      { "field": "order_date", "type": "datetime", "required": true },
+      { "field": "notes", "type": "string", "max_length": 500 }
+    ],
+    "strict_mode": true
+  }
+}
+```
+
+**Backward Compatibility**: Existing schema files without metadata continue to work unchanged. Metadata validation is optional and can be added incrementally to enhance validation precision.
+
 **Command Options:**
 ```bash
 # Basic validation

@@ -57,7 +57,7 @@ This document defines comprehensive test scenarios for the Schema Validation fea
 
 7. **test_vendor_type_mapping_mysql**
    - Verify mapping of MySQL types: INT→INTEGER, VARCHAR→STRING, DATETIME→DATETIME
-   
+
 8. **test_vendor_type_mapping_postgresql**
    - Verify mapping of PostgreSQL types: INTEGER→INTEGER, TEXT→STRING, TIMESTAMP→DATETIME
 
@@ -86,51 +86,141 @@ This document defines comprehensive test scenarios for the Schema Validation fea
     - Test scenario: Column with unsupported expected_type
     - Expected: RuleExecutionError
 
+**Metadata Validation Tests**
+
+15. **test_string_max_length_validation_success**
+    - Test scenario: String column with matching max_length
+    - Mock database returns: name (VARCHAR(100))
+    - Schema rule expects: name (STRING, max_length: 100)
+    - Expected: status=PASSED
+
+16. **test_string_max_length_validation_failure**
+    - Test scenario: String column with max_length mismatch
+    - Mock database returns: name (VARCHAR(50))
+    - Schema rule expects: name (STRING, max_length: 100)
+    - Expected: status=FAILED, METADATA_MISMATCH
+
+17. **test_float_precision_scale_validation_success**
+    - Test scenario: Float column with matching precision/scale
+    - Mock database returns: price (DECIMAL(10,2))
+    - Schema rule expects: price (FLOAT, precision: 10, scale: 2)
+    - Expected: status=PASSED
+
+18. **test_float_precision_validation_failure**
+    - Test scenario: Float column with precision mismatch
+    - Mock database returns: price (DECIMAL(8,2))
+    - Schema rule expects: price (FLOAT, precision: 10, scale: 2)
+    - Expected: status=FAILED, METADATA_MISMATCH
+
+19. **test_float_scale_validation_failure**
+    - Test scenario: Float column with scale mismatch
+    - Mock database returns: price (DECIMAL(10,4))
+    - Schema rule expects: price (FLOAT, precision: 10, scale: 2)
+    - Expected: status=FAILED, METADATA_MISMATCH
+
+20. **test_mixed_metadata_validation**
+    - Test scenario: Mix of columns with and without metadata
+    - Mock database returns: id (INTEGER), name (VARCHAR(100)), price (DECIMAL(10,2))
+    - Schema rule expects: id (INTEGER), name (STRING, max_length: 100), price (FLOAT)
+    - Expected: status=PASSED for all columns
+
+21. **test_unlimited_length_string_validation**
+    - Test scenario: TEXT/BLOB columns (unlimited length)
+    - Mock database returns: description (TEXT)
+    - Schema rule expects: description (STRING, max_length: 1000)
+    - Expected: status=PASSED (unlimited >= specified limit)
+
+22. **test_missing_metadata_in_database**
+    - Test scenario: Database metadata unavailable
+    - Mock database returns: name (VARCHAR) [no length info]
+    - Schema rule expects: name (STRING, max_length: 100)
+    - Expected: status=FAILED, clear error message about missing metadata
+
+23. **test_metadata_type_parsing**
+    - Test scenario: Various vendor-specific type formats
+    - Test parsing: VARCHAR(255), DECIMAL(10,2), FLOAT(8,4), TEXT, etc.
+    - Expected: Correct extraction of metadata from type strings
+
+24. **test_performance_large_schema_with_metadata**
+    - Test scenario: 100+ columns with metadata validation
+    - Expected: Validation completes within 5 seconds
+    - No memory leaks or performance degradation
+
 ### CLI Schema Command Tests (`tests/cli/commands/test_schema_command.py`)
 
 #### Test Class: `TestSchemaCommand`
 
 **File Format Tests**
 
-15. **test_single_table_format_valid**
+25. **test_single_table_format_valid**
     - Test valid single-table JSON format
     - Expected: Proper decomposition into atomic rules
 
-16. **test_multi_table_format_valid**
+26. **test_multi_table_format_valid**
     - Test valid multi-table JSON format
     - Expected: Rules grouped by table correctly
 
-17. **test_invalid_json_format**
+27. **test_invalid_json_format**
     - Test malformed JSON file
     - Expected: click.UsageError with clear message
 
-18. **test_missing_rules_array**
+28. **test_missing_rules_array**
     - Test JSON without required 'rules' array
     - Expected: click.UsageError
 
-19. **test_empty_rules_file**
+29. **test_empty_rules_file**
     - Test empty JSON file
     - Expected: Early exit with appropriate message
 
+**Metadata Parsing Tests**
+
+30. **test_extended_json_format_with_metadata**
+    - Input: `{"field": "name", "type": "string", "max_length": 100, "required": true}`
+    - Expected: SCHEMA rule with metadata + NOT_NULL rule
+
+31. **test_float_metadata_parsing**
+    - Input: `{"field": "price", "type": "float", "precision": 10, "scale": 2}`
+    - Expected: SCHEMA rule with precision and scale metadata
+
+32. **test_invalid_metadata_combinations**
+    - Input: `{"field": "id", "type": "integer", "max_length": 100}`
+    - Expected: click.UsageError (max_length invalid for integer type)
+
+33. **test_invalid_precision_scale_combination**
+    - Input: `{"field": "price", "type": "float", "precision": 5, "scale": 10}`
+    - Expected: click.UsageError (scale cannot exceed precision)
+
+34. **test_negative_metadata_values**
+    - Input: `{"field": "name", "type": "string", "max_length": -100}`
+    - Expected: click.UsageError (metadata must be non-negative)
+
+35. **test_backwards_compatibility_without_metadata**
+    - Input: Legacy JSON format without metadata fields
+    - Expected: Proper parsing, metadata validation skipped
+
+36. **test_mixed_metadata_fields**
+    - Input: Schema with some fields having metadata, others not
+    - Expected: Correct rule decomposition for all field types
+
 **Rule Decomposition Tests**
 
-20. **test_decompose_type_only**
+37. **test_decompose_type_only**
     - Input: `{"field": "id", "type": "integer"}`
     - Expected: One SCHEMA rule with id→INTEGER mapping
 
-21. **test_decompose_required_true**
+38. **test_decompose_required_true**
     - Input: `{"field": "name", "type": "string", "required": true}`
     - Expected: SCHEMA rule + NOT_NULL rule
 
-22. **test_decompose_range_constraints**
+39. **test_decompose_range_constraints**
     - Input: `{"field": "age", "type": "integer", "min": 0, "max": 120}`
     - Expected: SCHEMA rule + RANGE rule with min_value/max_value
 
-23. **test_decompose_enum_values**
+40. **test_decompose_enum_values**
     - Input: `{"field": "status", "type": "string", "enum": ["active", "inactive"]}`
     - Expected: SCHEMA rule + ENUM rule with allowed_values
 
-24. **test_decompose_combined_constraints**
+41. **test_decompose_combined_constraints**
     - Input: Multiple constraints on single field
     - Expected: All corresponding atomic rules generated
 
@@ -169,20 +259,47 @@ This document defines comprehensive test scenarios for the Schema Validation fea
 
 **Real Database Tests**
 
-31. **test_mysql_schema_validation**
+48. **test_mysql_schema_validation**
     - Setup: Real MySQL table with known schema
     - Test: Run schema validation against actual table
     - Cleanup: Drop test table
 
-32. **test_postgresql_schema_validation**
+49. **test_postgresql_schema_validation**
     - Setup: Real PostgreSQL table
     - Test: Validate complex types (TIMESTAMP, TEXT, etc.)
     - Cleanup: Drop test table
 
-33. **test_sqlite_schema_validation**
+50. **test_sqlite_schema_validation**
     - Setup: In-memory SQLite database
     - Test: Full schema validation workflow
     - No cleanup needed (in-memory)
+
+**Metadata Integration Tests**
+
+51. **test_mysql_metadata_validation**
+    - Setup: MySQL table with VARCHAR(100), DECIMAL(10,2) columns
+    - Test: Schema rules with corresponding metadata
+    - Expected: Metadata extracted and validated correctly
+
+52. **test_postgresql_metadata_validation**
+    - Setup: PostgreSQL table with TEXT, NUMERIC(12,3) columns
+    - Test: Metadata validation across different PostgreSQL types
+    - Expected: Proper type mapping and metadata validation
+
+53. **test_sqlite_metadata_validation**
+    - Setup: SQLite table with limited type system
+    - Test: Metadata validation with SQLite type affinity
+    - Expected: Graceful handling of SQLite's dynamic typing
+
+54. **test_mixed_metadata_integration**
+    - Setup: Table with mixed columns (some with metadata, some without)
+    - Test: End-to-end validation with selective metadata checking
+    - Expected: Only columns with expected metadata are validated
+
+55. **test_metadata_extraction_performance**
+    - Setup: Large table with 50+ columns, various types with metadata
+    - Test: Full metadata extraction and validation
+    - Expected: Completes within 10 seconds, single database query
 
 **Multi-Table Validation**
 
@@ -287,7 +404,7 @@ CREATE TABLE test_orders (
 
 ### Sample Rules Files
 
-**Single-Table Format:**
+**Single-Table Format (Legacy):**
 ```json
 {
   "rules": [
@@ -300,22 +417,40 @@ CREATE TABLE test_orders (
 }
 ```
 
-**Multi-Table Format:**
+**Single-Table Format with Metadata:**
+```json
+{
+  "rules": [
+    {"field": "id", "type": "integer", "required": true},
+    {"field": "name", "type": "string", "max_length": 100, "required": true},
+    {"field": "email", "type": "string", "max_length": 255},
+    {"field": "price", "type": "float", "precision": 10, "scale": 2, "min": 0},
+    {"field": "description", "type": "string", "max_length": 1000},
+    {"field": "status", "type": "string", "enum": ["active", "inactive"]}
+  ]
+}
+```
+
+**Multi-Table Format with Mixed Metadata:**
 ```json
 {
   "users": {
     "rules": [
       {"field": "id", "type": "integer"},
-      {"field": "name", "type": "string", "required": true}
+      {"field": "username", "type": "string", "max_length": 50, "required": true},
+      {"field": "email", "type": "string", "max_length": 255, "required": true},
+      {"field": "bio", "type": "string", "max_length": 500}
     ],
     "strict_mode": true
   },
-  "orders": {
+  "products": {
     "rules": [
       {"field": "id", "type": "integer"},
-      {"field": "user_id", "type": "integer", "required": true},
-      {"field": "total", "type": "float", "min": 0}
-    ]
+      {"field": "name", "type": "string", "max_length": 200, "required": true},
+      {"field": "price", "type": "float", "precision": 12, "scale": 2, "min": 0},
+      {"field": "weight", "type": "float", "precision": 8, "scale": 3}
+    ],
+    "case_insensitive": true
   }
 }
 ```
@@ -408,3 +543,94 @@ pytest tests/ -k "schema" --cov=core --cov=cli --cov-report=html
 - Performance regression detection
 - Database compatibility matrix testing
 - Documentation updates required for new test scenarios
+
+## Metadata Validation Troubleshooting Guide
+
+### Common Issues and Solutions
+
+**Issue 1: Metadata Mismatch Errors**
+- **Symptom**: METADATA_MISMATCH failures for correct-looking schemas
+- **Cause**: Database metadata extraction returning unexpected formats
+- **Solution**: Check actual database column definitions using database-specific tools
+- **Debug**: Enable verbose logging to see extracted metadata vs expected
+
+**Issue 2: Missing Metadata in Database Response**
+- **Symptom**: Validation failures with "metadata unavailable" messages
+- **Cause**: Database system not providing length/precision in metadata queries
+- **Solution**: Verify database permissions and version compatibility
+- **Workaround**: Use schema validation without metadata (legacy format)
+
+**Issue 3: Unlimited Length Field Validation**
+- **Symptom**: TEXT/BLOB fields failing length validation unexpectedly
+- **Cause**: Database returns -1 or NULL for unlimited length fields
+- **Expected Behavior**: Unlimited length should pass all max_length checks
+- **Solution**: This is handled automatically - no action needed
+
+**Issue 4: Vendor-Specific Type Parsing**
+- **Symptom**: Type parsing errors for complex database types
+- **Cause**: Unsupported vendor-specific type format
+- **Solution**: Review type mapping in SchemaExecutor._extract_type_metadata()
+- **Add Support**: Extend regex patterns for new type formats
+
+**Issue 5: Performance Issues with Large Schemas**
+- **Symptom**: Metadata validation takes longer than expected
+- **Cause**: Multiple database queries or inefficient metadata extraction
+- **Expected**: Single query per table, completes within 10 seconds for 100+ columns
+- **Debug**: Check database query logs for multiple metadata requests
+
+**Issue 6: Scale/Precision Validation Failures**
+- **Symptom**: FLOAT columns failing precision/scale validation
+- **Cause**: Database storing different precision than schema definition
+- **Solution**: Verify actual database column definitions match expected
+- **Note**: Some databases automatically adjust precision/scale during table creation
+
+### Performance Expectations
+
+**Metadata Validation Performance Targets:**
+- **Small schemas (1-10 columns)**: < 1 second
+- **Medium schemas (10-50 columns)**: < 3 seconds
+- **Large schemas (50-100 columns)**: < 5 seconds
+- **Very large schemas (100+ columns)**: < 10 seconds
+
+**Memory Usage:**
+- Metadata validation should not significantly increase memory usage
+- Expected: < 10MB additional memory for 100+ column schemas
+
+**Database Queries:**
+- **Expected**: 1 metadata query per table (using get_column_list())
+- **Not Expected**: Per-column queries or data scanning queries
+
+### Debugging Commands
+
+**Enable Verbose Logging:**
+```bash
+vlite schema --conn <connection> --rules <file> --verbose
+```
+
+**Test Metadata Extraction:**
+```python
+# Debug database metadata extraction
+from shared.database.query_executor import QueryExecutor
+from shared.schema.connection_schema import ConnectionSchema
+
+conn = ConnectionSchema(...)
+executor = QueryExecutor(conn)
+columns = executor.get_column_list("table_name")
+print("Extracted metadata:", columns)
+```
+
+**Validate Rule Parameters:**
+```python
+# Test rule parameter validation
+from shared.schema.rule_schema import RuleSchema
+from shared.enums.rule_types import RuleType
+
+rule = RuleSchema(
+    type=RuleType.SCHEMA,
+    parameters={
+        "columns": {
+            "name": {"expected_type": "STRING", "max_length": 100}
+        }
+    }
+)
+```

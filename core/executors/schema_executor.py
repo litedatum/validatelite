@@ -67,7 +67,7 @@ class SchemaExecutor(BaseExecutor):
         import re
 
         vendor_type = vendor_type.upper().strip()
-        metadata = {"canonical_type": None}
+        metadata: Dict[str, Any] = {"canonical_type": None}
 
         # Extract length/precision pattern: TYPE(length) or TYPE(precision,scale)
         match = re.match(r"^([A-Z_]+)(?:\((\d+)(?:,(\d+))?\))?", vendor_type)
@@ -166,7 +166,7 @@ class SchemaExecutor(BaseExecutor):
                 dataset_metric = DatasetMetrics(
                     entity_name=table_name,
                     total_records=0,  # No records exist if table doesn't exist
-                    failed_records=total_declared,  # All checks fail if table doesn't exist
+                    failed_records=total_declared,  # All checks fail if no table
                     processing_time=execution_time,
                 )
 
@@ -175,14 +175,16 @@ class SchemaExecutor(BaseExecutor):
                     status="FAILED",
                     dataset_metrics=[dataset_metric],
                     execution_time=execution_time,
-                    execution_message=f"Table '{table_name}' does not exist or cannot be accessed",
+                    execution_message=(
+                        f"Table '{table_name}' does not exist or cannot be accessed"
+                    ),
                     error_message=str(table_error),
                     sample_data=None,
                     cross_db_metrics=None,
                     execution_plan={
                         "execution_type": "metadata",
                         "schema_details": {
-                            "field_results": [],  # No field-level results when table doesn't exist
+                            "field_results": [],  # No results when table missing
                             "extras": [],
                             "table_exists": False,
                         },
@@ -201,22 +203,36 @@ class SchemaExecutor(BaseExecutor):
                 col_name = key_of(c["name"])
                 col_type = str(c.get("type", "")).upper()
                 metadata = self._extract_type_metadata(col_type)
+
+                # Use database metadata if available, fallback to parsed type metadata
+                max_length = c.get("character_maximum_length")
+                if max_length is None:
+                    max_length = metadata.get("max_length")
+
+                precision = c.get("numeric_precision")
+                if precision is None:
+                    precision = metadata.get("precision")
+
+                scale = c.get("numeric_scale")
+                if scale is None:
+                    scale = metadata.get("scale")
+
                 actual_map[col_name] = {
                     "type": col_type,
                     "canonical_type": metadata["canonical_type"],
-                    "max_length": metadata.get("max_length"),
-                    "precision": metadata.get("precision"),
-                    "scale": metadata.get("scale"),
+                    "max_length": max_length,
+                    "precision": precision,
+                    "scale": scale,
                 }
 
             def compare_metadata(
                 expected_cfg: Dict[str, Any], actual_meta: Dict[str, Any]
-            ) -> Dict[str, str]:
+            ) -> Dict[str, Any]:
                 """Compare expected metadata with actual metadata.
 
                 Returns dict with validation results and failure details.
                 """
-                result = {
+                result: Dict[str, Any] = {
                     "type_status": "UNKNOWN",
                     "metadata_status": "UNKNOWN",
                     "failure_details": [],
@@ -231,7 +247,8 @@ class SchemaExecutor(BaseExecutor):
                 else:
                     result["type_status"] = "FAILED"
                     result["failure_details"].append(
-                        f"Type mismatch: expected {expected_type}, got {actual_canonical}"
+                        f"Type mismatch: expected {expected_type}, "
+                        f"got {actual_canonical}"
                     )
 
                 # Only validate metadata if type matches
@@ -247,11 +264,13 @@ class SchemaExecutor(BaseExecutor):
                         actual_length = actual_meta.get("max_length")
                         if actual_length is None:
                             metadata_failures.append(
-                                f"Expected max_length {expected_length}, but actual type has no length limit"
+                                f"Expected max_length {expected_length}, "
+                                f"but actual type has no length limit"
                             )
                         elif actual_length != expected_length:
                             metadata_failures.append(
-                                f"Length mismatch: expected {expected_length}, got {actual_length}"
+                                f"Length mismatch: expected {expected_length}, "
+                                f"got {actual_length}"
                             )
 
                     # Float precision/scale validation
@@ -261,7 +280,8 @@ class SchemaExecutor(BaseExecutor):
                             actual_precision = actual_meta.get("precision")
                             if actual_precision != expected_precision:
                                 metadata_failures.append(
-                                    f"Precision mismatch: expected {expected_precision}, got {actual_precision}"
+                                    f"Precision mismatch: expected "
+                                    f"{expected_precision}, got {actual_precision}"
                                 )
 
                         if "scale" in expected_cfg:
@@ -269,7 +289,8 @@ class SchemaExecutor(BaseExecutor):
                             actual_scale = actual_meta.get("scale")
                             if actual_scale != expected_scale:
                                 metadata_failures.append(
-                                    f"Scale mismatch: expected {expected_scale}, got {actual_scale}"
+                                    f"Scale mismatch: expected {expected_scale}, "
+                                    f"got {actual_scale}"
                                 )
 
                     result["metadata_status"] = (

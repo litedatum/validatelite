@@ -305,6 +305,38 @@ _Only applicable to CSV file data sources_
 }
 ```
 
+**Enhanced Single-Table Format with Metadata (New in v0.4.3):**
+```json
+{
+  "rules": [
+    { "field": "id", "type": "integer", "required": true },
+    {
+      "field": "username",
+      "type": "string",
+      "max_length": 50,
+      "required": true
+    },
+    {
+      "field": "email",
+      "type": "string",
+      "max_length": 255,
+      "required": true
+    },
+    {
+      "field": "price",
+      "type": "float",
+      "precision": 10,
+      "scale": 2,
+      "min": 0
+    },
+    { "field": "age", "type": "integer", "min": 0, "max": 120 },
+    { "field": "created_at", "type": "datetime" }
+  ],
+  "strict_mode": true,
+  "case_insensitive": false
+}
+```
+
 **NEW: Multi-Table Format (v0.4.2):**
 ```json
 {
@@ -328,6 +360,62 @@ _Only applicable to CSV file data sources_
 }
 ```
 
+**Enhanced Multi-Table Format with Metadata (New in v0.4.3):**
+```json
+{
+  "users": {
+    "rules": [
+      { "field": "id", "type": "integer", "required": true },
+      {
+        "field": "username",
+        "type": "string",
+        "max_length": 50,
+        "required": true
+      },
+      {
+        "field": "email",
+        "type": "string",
+        "max_length": 255,
+        "required": true
+      },
+      {
+        "field": "bio",
+        "type": "string",
+        "max_length": 500
+      }
+    ],
+    "strict_mode": true,
+    "case_insensitive": false
+  },
+  "products": {
+    "rules": [
+      { "field": "id", "type": "integer", "required": true },
+      {
+        "field": "name",
+        "type": "string",
+        "max_length": 200,
+        "required": true
+      },
+      {
+        "field": "price",
+        "type": "float",
+        "precision": 12,
+        "scale": 2,
+        "min": 0
+      },
+      {
+        "field": "weight",
+        "type": "float",
+        "precision": 8,
+        "scale": 3
+      }
+    ],
+    "strict_mode": false,
+    "case_insensitive": true
+  }
+}
+```
+
 **Supported Field Types:**
 - `string`, `integer`, `float`, `boolean`, `date`, `datetime`
 
@@ -337,10 +425,23 @@ _Only applicable to CSV file data sources_
 - `required` - Generate NOT_NULL rule if true
 - `min`/`max` - Generate RANGE rule for numeric types
 - `enum` - Generate ENUM rule with allowed values
+- `max_length` - Maximum string length validation (string types only) - **New in v0.4.3**
+- `precision` - Numeric precision validation (float types only) - **New in v0.4.3**
+- `scale` - Numeric scale validation (float types only) - **New in v0.4.3**
 - `strict_mode` - Report extra columns as violations (table-level option)
 - `case_insensitive` - Case-insensitive column matching (table-level option)
 
-#### NEW: Multi-Table and Excel Support
+**New in v0.4.3: Enhanced Metadata Validation**
+
+ValidateLite now supports **metadata validation** for precise schema enforcement without scanning table data. This provides superior performance by validating column constraints directly from database metadata.
+
+**Metadata Validation Features:**
+- **String Length Validation**: Validate `max_length` for string columns against database VARCHAR constraints
+- **Float Precision Validation**: Validate `precision` and `scale` for decimal columns against database DECIMAL/NUMERIC constraints
+- **Database-Agnostic**: Works across MySQL, PostgreSQL, and SQLite with vendor-specific type parsing
+- **Performance Optimized**: Uses database catalog queries, not data scans for validation
+
+#### New in v0.4.2: Multi-Table and Excel Support
 
 **Excel Multi-Sheet Files:**
 The schema command now supports Excel files with multiple worksheets as data sources. Each worksheet can be validated against its corresponding schema definition.
@@ -370,6 +471,35 @@ Schema Field → Generated Rules
 3. RANGE rule: Check "age" values between 0 and 120
 ```
 
+**New in v0.4.3: Enhanced Decomposition with Metadata Validation:**
+
+```
+Enhanced Schema Field → Generated Rules + Metadata
+═════════════════════════════════════════════════
+{
+  "field": "name",
+  "type": "string",
+  "max_length": 100,
+  "required": true
+}
+                ↓
+1. SCHEMA rule: Check "name" field exists, is string type, AND max_length ≤ 100
+2. NOT_NULL rule: Check "name" has no null values
+
+{
+  "field": "price",
+  "type": "float",
+  "precision": 10,
+  "scale": 2,
+  "min": 0
+}
+                ↓
+1. SCHEMA rule: Check "price" exists, is float type, precision=10, scale=2
+2. RANGE rule: Check "price" values ≥ 0
+```
+
+**Key Enhancement**: Metadata validation (max_length, precision, scale) is performed by the SCHEMA rule using database catalog information, providing superior performance compared to data-scanning approaches.
+
 **Execution Priority & Skip Logic:**
 1. **Field Missing** → Report FIELD_MISSING, skip all other checks for that field
 2. **Type Mismatch** → Report TYPE_MISMATCH, skip dependent checks (NOT_NULL, RANGE, ENUM)
@@ -394,7 +524,7 @@ Column: status
   ⚠ Dependent checks skipped
 ```
 
-**NEW: Multi-Table Table Mode:**
+**New in v0.4.2: Multi-Table Table Mode:**
 ```
 Table: customers
 ═══════════════
@@ -457,13 +587,13 @@ vlite schema --conn "mysql://root:password@localhost:3306/data_quality" \
   --rules test_data/schema.json
 ```
 
-**2. NEW: Multi-table schema validation:**
+**2. New in v0.4.2: Multi-table schema validation:**
 ```bash
 vlite schema --conn "mysql://user:pass@host:3306/sales" \
   --rules multi_table_schema.json
 ```
 
-**3. NEW: Excel multi-sheet validation:**
+**3. New in v0.4.2: Excel multi-sheet validation:**
 ```bash
 vlite schema --conn "data.xlsx" \
   --rules excel_schema.json
@@ -481,6 +611,22 @@ vlite schema --conn "mysql://user:pass@host:3306/sales" \
 vlite schema --conn "postgresql://user:pass@localhost:5432/app" \
   --rules customer_schema.json \
   --verbose
+```
+
+**6. New in v0.4.3: Metadata validation examples:**
+```bash
+# Schema validation with string length constraints
+vlite schema --conn "mysql://user:pass@host:3306/shop" \
+  --rules string_metadata_schema.json
+
+# Schema validation with float precision constraints
+vlite schema --conn "postgresql://user:pass@host:5432/finance" \
+  --rules decimal_metadata_schema.json
+
+# Mixed metadata validation across multiple tables
+vlite schema --conn "sqlite:///data/app.db" \
+  --rules mixed_metadata_schema.json \
+  --output json
 ```
 
 #### Exit Codes
@@ -773,6 +919,9 @@ export POSTGRESQL_DB_URL="postgresql://user:pass@host:5432/db"
 | `No rules specified` | Missing --rule or --rules | Add at least one validation rule |
 | `Unsupported database type: oracle` | Database not supported | Use MySQL, PostgreSQL, or SQLite |
 | `JSON parse error in rules file` | Malformed JSON | Validate JSON syntax in rules file |
+| `max_length can only be specified for 'string' type fields` | Invalid metadata combination | Only use max_length with string type fields |
+| `scale cannot be greater than precision` | Invalid precision/scale values | Ensure scale ≤ precision for float fields |
+| `METADATA_MISMATCH: Expected max_length 100, got 50` | Database metadata mismatch | Verify actual database column definitions |
 
 ### Connection Issues
 
@@ -830,6 +979,25 @@ query_timeout = 600       # Increase timeout for large queries
 # In config/core.toml
 parallel_execution = true # Enable parallel rule execution
 ```
+
+**New in v0.4.3: Metadata Validation Performance:**
+
+**Performance Benefits:**
+- **No Data Scanning**: Metadata validation uses database catalog queries only
+- **Single Query**: All column metadata retrieved in one operation per table
+- **Fast Validation**: Large schemas (100+ columns) validate in seconds, not minutes
+
+**Performance Expectations:**
+- **Small schemas (1-10 columns)**: < 1 second
+- **Medium schemas (10-50 columns)**: < 3 seconds
+- **Large schemas (50-100 columns)**: < 5 seconds
+- **Very large schemas (100+ columns)**: < 10 seconds
+
+**When to Use Metadata Validation:**
+- ✅ **Use metadata validation** for schema structure validation (field existence, types, constraints)
+- ✅ **Use with large tables** where data scanning would be expensive
+- ✅ **Use for CI/CD pipelines** where speed is critical
+- ❌ **Don't use for data quality checks** (use RANGE, ENUM, REGEX rules instead)
 
 ---
 

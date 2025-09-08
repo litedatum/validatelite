@@ -437,8 +437,8 @@ class RuleSchema(RuleBase):
                 precision = cfg["precision"]
                 if isinstance(precision, int) and scale > precision:
                     raise RuleExecutionError(
-                        f"SCHEMA column '{col_name}': scale ({scale}) cannot be greater "
-                        f"than precision ({precision})"
+                        f"SCHEMA column '{col_name}': scale ({scale}) cannot be "
+                        f"greater than precision ({precision})"
                     )
 
     def get_rule_category_name(self) -> str:

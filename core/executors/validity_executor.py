@@ -601,4 +601,3 @@ class ValidityExecutor(BaseExecutor):
             where_clause += f" AND ({filter_condition})"
 
         return f"SELECT COUNT(*) AS anomaly_count FROM {table} {where_clause}"
-

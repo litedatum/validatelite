@@ -27,10 +27,8 @@ from tests.shared.utils.database_utils import (
 def generate_order_data(
     customer_count: int = 1000, orders_per_customer: int = 3
 ) -> List[Tuple]:
-    """
-    Generate test order data with specific patterns to ensure test cases pass/fail consistently.
-    """
-    # Products and statuses designed to work with our schema validation tests
+    """Generate test data with patterns for consistent test results."""
+    # Products and statuses designed to work with schema validation tests
     products = [
         "Laptop",
         "Phone",
@@ -77,7 +75,8 @@ def generate_order_data(
             )
 
     # Add some orders with specific patterns for testing schema validation
-    # These patterns should all be DATABASE-VALID (insertable) but may have BUSINESS-LOGIC issues
+    # These patterns should all be DATABASE-VALID (insertable)
+    # but may have BUSINESS-LOGIC issues
     from datetime import date
 
     test_date = date(2024, 1, 15)
@@ -313,8 +312,10 @@ async def insert_test_data(
             await conn.execute(
                 text(
                     """
-                    INSERT INTO orders (customer_id, product_name, quantity, price, status, order_date)
-                    VALUES (:customer_id, :product_name, :quantity, :price, :status, :order_date)
+                    INSERT INTO orders (customer_id, product_name, quantity,
+                                        price, status, order_date)
+                    VALUES (:customer_id, :product_name, :quantity,
+                            :price, :status, :order_date)
                 """
                 ),
                 {
@@ -367,7 +368,8 @@ async def setup_mysql_database() -> None:
         await insert_test_data(engine, customers, orders)
 
         print(
-            f"[SUCCESS] MySQL database setup completed. Inserted {len(customers)} customers and {len(orders)} orders."
+            f"[SUCCESS] MySQL database setup completed. "
+            f"Inserted {len(customers)} customers and {len(orders)} orders."
         )
 
     finally:

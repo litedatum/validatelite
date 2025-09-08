@@ -813,6 +813,10 @@ class QueryExecutor:
                         "Default", col.get("column_default", col.get("default"))
                     ),
                     "extra": col.get("Extra", col.get("extra", "")),
+                    # Include metadata for schema validation
+                    "character_maximum_length": col.get("character_maximum_length"),
+                    "numeric_precision": col.get("numeric_precision"),
+                    "numeric_scale": col.get("numeric_scale"),
                     # Keep original data for future needs
                     "original": col,
                 }

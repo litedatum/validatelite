@@ -68,7 +68,7 @@ def _setup_logging() -> None:
 
 
 @click.group(name="vlite", invoke_without_command=True)
-@click.version_option(version="0.4.2", prog_name="vlite")
+@click.version_option(version="0.4.3", prog_name="vlite")
 @click.pass_context
 def cli_app(ctx: click.Context) -> None:
     """

@@ -307,49 +307,56 @@ def test_multi_table_schema_metadata_happy_path(tmp_path: Path, db_url: str) -> 
     assert orders_found, f"orders table not found in: {table_names}"
 
     # Verify specific metadata validation failures
-    
+    fields = payload.get("fields", [])
+
     # Check for max_length validation failures
     max_length_failures = []
     for f in fields:
         field_name = f.get("column", "")
         table_name = f.get("table", "")
-        
+
         # Look for fields that should fail max_length validation
-        if (field_name == "name" and "customers" in table_name) or \
-           (field_name == "product_name" and "orders" in table_name) or \
-           (field_name == "status" and "orders" in table_name):
-            
+        if (
+            (field_name == "name" and "customers" in table_name)
+            or (field_name == "product_name" and "orders" in table_name)
+            or (field_name == "status" and "orders" in table_name)
+        ):
+
             # Check if the field has a type check failure due to metadata mismatch
             type_check = f.get("checks", {}).get("type", {})
             if isinstance(type_check, dict):
-                if (type_check.get("failure_code") == "METADATA_MISMATCH" or 
-                    type_check.get("status") == "FAILED"):
+                if (
+                    type_check.get("failure_code") == "METADATA_MISMATCH"
+                    or type_check.get("status") == "FAILED"
+                ):
                     max_length_failures.append(f"{table_name}.{field_name}")
-    
-    assert len(max_length_failures) > 0, (
+
+    assert len(max_length_failures) == 0, (
         f"Expected max_length validation failures for name/product_name/status fields, "
         f"but found none. Available fields: {[(f.get('table'), f.get('column')) for f in fields]}"
     )
-    
+
     # Check for precision/scale validation failures
     precision_failures = []
     for f in fields:
         field_name = f.get("column", "")
         table_name = f.get("table", "")
-        
+
         # Look for price field that should fail precision/scale validation
         if field_name == "price" and "orders" in table_name:
             type_check = f.get("checks", {}).get("type", {})
             if isinstance(type_check, dict):
-                if (type_check.get("failure_code") == "METADATA_MISMATCH" or 
-                    type_check.get("status") == "FAILED"):
+                if (
+                    type_check.get("failure_code") == "METADATA_MISMATCH"
+                    or type_check.get("status") == "FAILED"
+                ):
                     precision_failures.append(f"{table_name}.{field_name}")
-    
-    assert len(precision_failures) > 0, (
+
+    assert len(precision_failures) == 0, (
         f"Expected precision/scale validation failure for orders.price field, "
         f"but found none. Available fields: {[(f.get('table'), f.get('column')) for f in fields]}"
     )
-    
+
     # Verify that the failure details contain the expected metadata mismatch information
     # Look for specific failure details in the results
     metadata_mismatch_found = False
@@ -358,19 +365,24 @@ def test_multi_table_schema_metadata_happy_path(tmp_path: Path, db_url: str) -> 
         if execution_plan.get("execution_type") == "metadata":
             schema_details = execution_plan.get("schema_details", {})
             field_results = schema_details.get("field_results", [])
-            
+
             for field_result in field_results:
                 failure_code = field_result.get("failure_code")
                 if failure_code == "METADATA_MISMATCH":
                     failure_details = field_result.get("failure_details", [])
                     if isinstance(failure_details, list) and len(failure_details) > 0:
                         # Check if failure details mention length, precision, or scale mismatches
-                        details_text = " ".join(str(detail) for detail in failure_details).lower()
-                        if any(keyword in details_text for keyword in ["length", "precision", "scale"]):
+                        details_text = " ".join(
+                            str(detail) for detail in failure_details
+                        ).lower()
+                        if any(
+                            keyword in details_text
+                            for keyword in ["length", "precision", "scale"]
+                        ):
                             metadata_mismatch_found = True
                             break
-    
-    assert metadata_mismatch_found, (
+
+    assert not metadata_mismatch_found, (
         "Expected to find METADATA_MISMATCH failure codes with length/precision/scale details, "
         "but none were found in the execution results"
     )
@@ -517,49 +529,56 @@ def test_multi_table_schema_metadata_validation_failures(
     assert orders_found, f"orders table not found in: {table_names}"
 
     # Verify specific metadata validation failures
-    
+    fields = payload.get("fields", [])
+
     # Check for max_length validation failures
     max_length_failures = []
     for f in fields:
         field_name = f.get("column", "")
         table_name = f.get("table", "")
-        
+
         # Look for fields that should fail max_length validation
-        if (field_name == "name" and "customers" in table_name) or \
-           (field_name == "product_name" and "orders" in table_name) or \
-           (field_name == "status" and "orders" in table_name):
-            
+        if (
+            (field_name == "name" and "customers" in table_name)
+            or (field_name == "product_name" and "orders" in table_name)
+            or (field_name == "status" and "orders" in table_name)
+        ):
+
             # Check if the field has a type check failure due to metadata mismatch
             type_check = f.get("checks", {}).get("type", {})
             if isinstance(type_check, dict):
-                if (type_check.get("failure_code") == "METADATA_MISMATCH" or 
-                    type_check.get("status") == "FAILED"):
+                if (
+                    type_check.get("failure_code") == "METADATA_MISMATCH"
+                    or type_check.get("status") == "FAILED"
+                ):
                     max_length_failures.append(f"{table_name}.{field_name}")
-    
+
     assert len(max_length_failures) > 0, (
         f"Expected max_length validation failures for name/product_name/status fields, "
         f"but found none. Available fields: {[(f.get('table'), f.get('column')) for f in fields]}"
     )
-    
+
     # Check for precision/scale validation failures
     precision_failures = []
     for f in fields:
         field_name = f.get("column", "")
         table_name = f.get("table", "")
-        
+
         # Look for price field that should fail precision/scale validation
         if field_name == "price" and "orders" in table_name:
             type_check = f.get("checks", {}).get("type", {})
             if isinstance(type_check, dict):
-                if (type_check.get("failure_code") == "METADATA_MISMATCH" or 
-                    type_check.get("status") == "FAILED"):
+                if (
+                    type_check.get("failure_code") == "METADATA_MISMATCH"
+                    or type_check.get("status") == "FAILED"
+                ):
                     precision_failures.append(f"{table_name}.{field_name}")
-    
+
     assert len(precision_failures) > 0, (
         f"Expected precision/scale validation failure for orders.price field, "
         f"but found none. Available fields: {[(f.get('table'), f.get('column')) for f in fields]}"
     )
-    
+
     # Verify that the failure details contain the expected metadata mismatch information
     # Look for specific failure details in the results
     metadata_mismatch_found = False
@@ -568,18 +587,23 @@ def test_multi_table_schema_metadata_validation_failures(
         if execution_plan.get("execution_type") == "metadata":
             schema_details = execution_plan.get("schema_details", {})
             field_results = schema_details.get("field_results", [])
-            
+
             for field_result in field_results:
                 failure_code = field_result.get("failure_code")
                 if failure_code == "METADATA_MISMATCH":
                     failure_details = field_result.get("failure_details", [])
                     if isinstance(failure_details, list) and len(failure_details) > 0:
                         # Check if failure details mention length, precision, or scale mismatches
-                        details_text = " ".join(str(detail) for detail in failure_details).lower()
-                        if any(keyword in details_text for keyword in ["length", "precision", "scale"]):
+                        details_text = " ".join(
+                            str(detail) for detail in failure_details
+                        ).lower()
+                        if any(
+                            keyword in details_text
+                            for keyword in ["length", "precision", "scale"]
+                        ):
                             metadata_mismatch_found = True
                             break
-    
+
     assert metadata_mismatch_found, (
         "Expected to find METADATA_MISMATCH failure codes with length/precision/scale details, "
         "but none were found in the execution results"
