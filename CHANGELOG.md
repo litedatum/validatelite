@@ -8,10 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- None
+- feat(schema): Implement syntactic sugar for type definitions in schema rules
+- feat(core): Add TypeParser utility for parsing compact type definitions (e.g., `string(50)`, `float(12,2)`)
+- feat(schema): Support shorthand type syntax: `string(50)` → `{"type": "string", "max_length": 50}`
+- feat(schema): Support float precision/scale syntax: `float(12,2)` → `{"type": "float", "precision": 12, "scale": 2}`
+- feat(schema): Support datetime format syntax: `datetime('yyyymmdd')` → `{"type": "datetime", "format": "yyyymmdd"}`
+- feat(core): Enhanced schema executor with native database type reporting capabilities
+- feat(core): Add comprehensive type aliases support (str→string, int→integer, bool→boolean)
+- feat(tests): Comprehensive test coverage for type parser with unit and integration tests
+- feat(tests): Native type integration testing for enhanced schema validation
 
 ### Changed
-- None
+- enhance(cli): Updated schema command to support both syntactic sugar and detailed JSON type definitions
+- enhance(core): Improved schema executor to handle parsed type definitions with metadata
+- enhance(validation): Maintain backward compatibility with existing detailed JSON schema format
 
 ### Fixed
 - None

@@ -305,7 +305,7 @@ class SchemaExecutor(BaseExecutor):
             # Count failures across declared columns and strict-mode extras
             total_declared = len(columns_cfg)
             failures = 0
-            field_results: list[dict[str, str]] = []
+            field_results: list[dict[str, Any]] = []
 
             for declared_name, cfg in columns_cfg.items():
                 expected_type_raw = cfg.get("expected_type")
@@ -331,6 +331,9 @@ class SchemaExecutor(BaseExecutor):
                             "existence": "FAILED",
                             "type": "SKIPPED",
                             "failure_code": "FIELD_MISSING",
+                            "native_type": None,
+                            "canonical_type": None,
+                            "native_metadata": {},
                         }
                     )
                     continue
@@ -357,6 +360,14 @@ class SchemaExecutor(BaseExecutor):
                             "type": "FAILED",
                             "failure_code": "TYPE_MISMATCH",
                             "failure_details": comparison_result["failure_details"],
+                            "native_type": actual_meta.get("type"),
+                            "canonical_type": actual_meta.get("canonical_type"),
+                            "native_metadata": {
+                                k: v
+                                for k, v in actual_meta.items()
+                                if k in ["max_length", "precision", "scale"]
+                                and v is not None
+                            },
                         }
                     )
                 elif comparison_result["metadata_status"] == "FAILED":
@@ -368,6 +379,14 @@ class SchemaExecutor(BaseExecutor):
                             "type": "PASSED",
                             "failure_code": "METADATA_MISMATCH",
                             "failure_details": comparison_result["failure_details"],
+                            "native_type": actual_meta.get("type"),
+                            "canonical_type": actual_meta.get("canonical_type"),
+                            "native_metadata": {
+                                k: v
+                                for k, v in actual_meta.items()
+                                if k in ["max_length", "precision", "scale"]
+                                and v is not None
+                            },
                         }
                     )
                 else:
@@ -377,6 +396,14 @@ class SchemaExecutor(BaseExecutor):
                             "existence": "PASSED",
                             "type": "PASSED",
                             "failure_code": "NONE",
+                            "native_type": actual_meta.get("type"),
+                            "canonical_type": actual_meta.get("canonical_type"),
+                            "native_metadata": {
+                                k: v
+                                for k, v in actual_meta.items()
+                                if k in ["max_length", "precision", "scale"]
+                                and v is not None
+                            },
                         }
                     )
 
