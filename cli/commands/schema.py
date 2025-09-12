@@ -137,16 +137,18 @@ def _validate_single_rule_item(item: Dict[str, Any], context: str) -> None:
         type_name = item["type"]
         if not isinstance(type_name, str):
             raise click.UsageError(f"{context}.type must be a string when provided")
-        
+
         # Use TypeParser to validate the type definition
-        from shared.utils.type_parser import TypeParser, TypeParseError
+        from shared.utils.type_parser import TypeParseError, TypeParser
+
         try:
             TypeParser.parse_type_definition(type_name)
         except TypeParseError as e:
             allowed = ", ".join(sorted(_ALLOWED_TYPE_NAMES))
             raise click.UsageError(
                 f"{context}.type '{type_name}' is not supported. Error: {str(e)}. "
-                f"Supported formats: {allowed} or syntactic sugar like string(50), float(12,2), datetime('format')"
+                f"Supported formats: {allowed} or syntactic sugar like string(50), "
+                "float(12,2), datetime('format')"
             )
 
     # required
@@ -361,40 +363,43 @@ def _decompose_single_table_schema(
 
         # Handle type definition using TypeParser (supports syntactic sugar)
         if "type" in item and item["type"] is not None:
-            from shared.utils.type_parser import TypeParser, TypeParseError
-            
+            from shared.utils.type_parser import TypeParseError, TypeParser
+
             try:
                 # Create a type definition dict for the parser
                 type_def = {"type": item["type"]}
-                
+
                 # Add metadata fields if present in the item
                 for metadata_field in ["max_length", "precision", "scale", "format"]:
                     if metadata_field in item:
                         type_def[metadata_field] = item[metadata_field]
-                
-                # Parse using TypeParser (handles both syntactic sugar and detailed format)
+
+                # Parse using TypeParser (handles both syntactic sugar
+                # and detailed format)
                 parsed_type = TypeParser.parse_type_definition(item["type"])
-                
+
                 # Add expected_type for schema validation
                 column_metadata["expected_type"] = parsed_type["type"]
-                
+
                 # Add any parsed metadata
                 for metadata_field in ["max_length", "precision", "scale", "format"]:
                     if metadata_field in parsed_type:
                         column_metadata[metadata_field] = parsed_type[metadata_field]
-                        
+
                 # Also add any explicit metadata from the item (overrides parsed values)
                 for metadata_field in ["max_length", "precision", "scale", "format"]:
                     if metadata_field in item:
                         column_metadata[metadata_field] = item[metadata_field]
-                        
+
             except TypeParseError as e:
-                raise click.UsageError(f"Invalid type definition for field '{field_name}': {str(e)}")
-            except Exception as e:
+                raise click.UsageError(
+                    f"Invalid type definition for field '{field_name}': {str(e)}"
+                )
+            except Exception:
                 # Fallback to original parsing for backward compatibility
                 dt = _map_type_name_to_datatype(str(item["type"]))
                 column_metadata["expected_type"] = dt.value
-                
+
                 # Add metadata fields if present
                 if "max_length" in item:
                     column_metadata["max_length"] = item["max_length"]
