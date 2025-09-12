@@ -132,15 +132,21 @@ def _validate_single_rule_item(item: Dict[str, Any], context: str) -> None:
     if not isinstance(field_name, str) or not field_name:
         raise click.UsageError(f"{context}.field must be a non-empty string")
 
-    # type
+    # type - validate using TypeParser to support syntactic sugar
     if "type" in item:
         type_name = item["type"]
         if not isinstance(type_name, str):
             raise click.UsageError(f"{context}.type must be a string when provided")
-        if type_name.lower() not in _ALLOWED_TYPE_NAMES:
+        
+        # Use TypeParser to validate the type definition
+        from shared.utils.type_parser import TypeParser, TypeParseError
+        try:
+            TypeParser.parse_type_definition(type_name)
+        except TypeParseError as e:
             allowed = ", ".join(sorted(_ALLOWED_TYPE_NAMES))
             raise click.UsageError(
-                f"{context}.type '{type_name}' is not supported. " f"Allowed: {allowed}"
+                f"{context}.type '{type_name}' is not supported. Error: {str(e)}. "
+                f"Supported formats: {allowed} or syntactic sugar like string(50), float(12,2), datetime('format')"
             )
 
     # required
@@ -160,58 +166,29 @@ def _validate_single_rule_item(item: Dict[str, Any], context: str) -> None:
                     f"{context}.{bound_key} must be numeric when provided"
                 )
 
-    # max_length
+    # max_length - basic validation, TypeParser will handle type consistency
     if "max_length" in item:
         value = item["max_length"]
         if not isinstance(value, int) or value < 0:
             raise click.UsageError(
                 f"{context}.max_length must be a non-negative integer when provided"
             )
-        # Validate max_length is only for string types
-        type_name = item.get("type", "").lower() if item.get("type") else None
-        if type_name and type_name != "string":
-            raise click.UsageError(
-                f"{context}.max_length can only be specified for 'string' type "
-                f"fields, not '{type_name}'"
-            )
 
-    # precision
+    # precision - basic validation, TypeParser will handle type consistency
     if "precision" in item:
         value = item["precision"]
         if not isinstance(value, int) or value < 0:
             raise click.UsageError(
                 f"{context}.precision must be a non-negative integer when provided"
             )
-        # Validate precision is only for float types
-        type_name = item.get("type", "").lower() if item.get("type") else None
-        if type_name and type_name != "float":
-            raise click.UsageError(
-                f"{context}.precision can only be specified for 'float' type "
-                f"fields, not '{type_name}'"
-            )
 
-    # scale
+    # scale - basic validation, TypeParser will handle type consistency
     if "scale" in item:
         value = item["scale"]
         if not isinstance(value, int) or value < 0:
             raise click.UsageError(
                 f"{context}.scale must be a non-negative integer when provided"
             )
-        # Validate scale is only for float types
-        type_name = item.get("type", "").lower() if item.get("type") else None
-        if type_name and type_name != "float":
-            raise click.UsageError(
-                f"{context}.scale can only be specified for 'float' type "
-                f"fields, not '{type_name}'"
-            )
-        # Validate scale <= precision when both are specified
-        if "precision" in item:
-            precision_val = item["precision"]
-            if isinstance(precision_val, int) and value > precision_val:
-                raise click.UsageError(
-                    f"{context}.scale ({value}) cannot be greater than precision "
-                    f"({precision_val})"
-                )
 
 
 def _validate_rules_payload(payload: Any) -> Tuple[List[str], int]:
@@ -379,21 +356,52 @@ def _decompose_single_table_schema(
             # Should have been validated earlier; keep defensive check
             raise click.UsageError("Each rule item must have a non-empty 'field'")
 
-        # SCHEMA: collect column metadata
+        # SCHEMA: collect column metadata using new TypeParser
         column_metadata = {}
 
-        # Add expected_type if type is specified
+        # Handle type definition using TypeParser (supports syntactic sugar)
         if "type" in item and item["type"] is not None:
-            dt = _map_type_name_to_datatype(str(item["type"]))
-            column_metadata["expected_type"] = dt.value
-
-        # Add metadata fields if present
-        if "max_length" in item:
-            column_metadata["max_length"] = item["max_length"]
-        if "precision" in item:
-            column_metadata["precision"] = item["precision"]
-        if "scale" in item:
-            column_metadata["scale"] = item["scale"]
+            from shared.utils.type_parser import TypeParser, TypeParseError
+            
+            try:
+                # Create a type definition dict for the parser
+                type_def = {"type": item["type"]}
+                
+                # Add metadata fields if present in the item
+                for metadata_field in ["max_length", "precision", "scale", "format"]:
+                    if metadata_field in item:
+                        type_def[metadata_field] = item[metadata_field]
+                
+                # Parse using TypeParser (handles both syntactic sugar and detailed format)
+                parsed_type = TypeParser.parse_type_definition(item["type"])
+                
+                # Add expected_type for schema validation
+                column_metadata["expected_type"] = parsed_type["type"]
+                
+                # Add any parsed metadata
+                for metadata_field in ["max_length", "precision", "scale", "format"]:
+                    if metadata_field in parsed_type:
+                        column_metadata[metadata_field] = parsed_type[metadata_field]
+                        
+                # Also add any explicit metadata from the item (overrides parsed values)
+                for metadata_field in ["max_length", "precision", "scale", "format"]:
+                    if metadata_field in item:
+                        column_metadata[metadata_field] = item[metadata_field]
+                        
+            except TypeParseError as e:
+                raise click.UsageError(f"Invalid type definition for field '{field_name}': {str(e)}")
+            except Exception as e:
+                # Fallback to original parsing for backward compatibility
+                dt = _map_type_name_to_datatype(str(item["type"]))
+                column_metadata["expected_type"] = dt.value
+                
+                # Add metadata fields if present
+                if "max_length" in item:
+                    column_metadata["max_length"] = item["max_length"]
+                if "precision" in item:
+                    column_metadata["precision"] = item["precision"]
+                if "scale" in item:
+                    column_metadata["scale"] = item["scale"]
 
         # Only add to columns_map if we have any metadata to store
         if column_metadata:
