@@ -98,16 +98,19 @@ class TestSchemaDecompositionAndMapping:
             .with_parameters({})
             .build()
         )
-        rules = _decompose_schema_payload(payload, mock_source_config)
+        schema_rules, other_rules = _decompose_schema_payload(
+            payload, mock_source_config
+        )
+        all_rules = schema_rules + other_rules
 
         # First rule should be SCHEMA when any columns declared
-        assert rules[0].type == RuleType.SCHEMA
-        schema_params = rules[0].parameters or {}
+        assert all_rules[0].type == RuleType.SCHEMA
+        schema_params = all_rules[0].parameters or {}
         assert schema_params["columns"]["id"]["expected_type"] == "INTEGER"
         assert schema_params["strict_mode"] is True
         assert schema_params["case_insensitive"] is True
 
-        types = [r.type for r in rules]
+        types = [r.type for r in all_rules]
         # NOT_NULL created for required
         assert RuleType.NOT_NULL in types
         # RANGE created for min/max
@@ -207,7 +210,7 @@ class TestSchemaPrioritizationAndOutputs:
         # Patch decomposition
         monkeypatch.setattr(
             "cli.commands.schema._decompose_schema_payload",
-            lambda payload, source_config: atomic_rules,
+            lambda payload, source_config: (atomic_rules, []),
         )
 
         # Build SCHEMA and dependent rule results. Dependent rules are PASSED in raw
@@ -336,7 +339,7 @@ class TestSchemaPrioritizationAndOutputs:
 
         monkeypatch.setattr(
             "cli.commands.schema._decompose_schema_payload",
-            lambda payload, source_config: atomic_rules,
+            lambda payload, source_config: (atomic_rules, []),
         )
 
         schema_result = {

@@ -17,17 +17,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - feat(core): Add comprehensive type aliases support (str→string, int→integer, bool→boolean)
 - feat(tests): Comprehensive test coverage for type parser with unit and integration tests
 - feat(tests): Native type integration testing for enhanced schema validation
+- **feat(architecture): Implement two-phase execution framework in CLI with skip semantics**
+- feat(schema): Add SchemaPhaseExecutor class for coordinated Phase 1 execution (schema rules only)
+- feat(schema): Add DesiredTypePhaseExecutor class for coordinated Phase 2 execution (additional rules with filtering)
+- feat(schema): Add ResultMerger class for combining phase results while maintaining output format consistency
+- feat(schema): Comprehensive logging system for debugging two-phase execution with timing and rule counts
+- feat(schema): Intelligent rule separation - automatically separate SCHEMA rules from other rule types for phased execution
 
 ### Changed
 - enhance(cli): Updated schema command to support both syntactic sugar and detailed JSON type definitions
 - enhance(core): Improved schema executor to handle parsed type definitions with metadata
 - enhance(validation): Maintain backward compatibility with existing detailed JSON schema format
+- **refactor(schema): Enhanced `_decompose_schema_payload()` to return tuple of (schema_rules, other_rules) for two-phase execution**
+- refactor(schema): Added `_decompose_schema_payload_atomic()` for backward compatibility with single-list return format
+- refactor(tests): Updated all schema-related test mocks to handle new tuple return format from rule decomposition
+- improve(architecture): All validation maintains identical output format and behavior - no user-visible changes
 
 ### Fixed
-- None
+- **fix(async): Resolved RuntimeError event loop management issue in two-phase execution**
+- fix(async): Consolidated both validation phases into single event loop to prevent database connection pool conflicts
+- fix(async): Eliminated multiple `asyncio.run()` calls that caused "Event loop is closed" errors in production
+- fix(tests): Updated test contracts and mocks to work with new two-phase execution architecture
 
 ### Removed
 - None
+
+### Architecture Notes
+- **Two-Phase Execution Framework**: Implemented foundation for future desired_type compatibility analysis
+- **Phase 1**: Schema rules execute first to collect native type information and validate table/column existence
+- **Phase 2**: Additional rules execute with intelligent filtering based on schema analysis results (skip semantics)
+- **Skip Logic**: Rules targeting missing tables/columns are automatically skipped to prevent cascading failures
+- **Result Merging**: Synthetic results created for skipped rules to maintain consistent output format
+- **Performance**: Current implementation optimizes for stability over concurrency - both phases execute serially within single event loop
 
 ## [0.4.3] - 2025-09-06
 

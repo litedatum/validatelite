@@ -282,6 +282,27 @@ def _create_rule_schema(
 
 def _decompose_schema_payload(
     payload: Dict[str, Any], source_config: ConnectionSchema
+) -> Tuple[List[RuleSchema], List[RuleSchema]]:
+    """Decompose a schema payload into atomic RuleSchema objects, separated by phase.
+
+    This function handles both single-table and multi-table formats in a
+    source-agnostic way. Returns schema rules and non-schema rules separately
+    to support two-phase execution.
+
+    Returns:
+        Tuple of (schema_rules, other_rules) for two-phase execution
+    """
+    all_atomic_rules = _decompose_schema_payload_atomic(payload, source_config)
+
+    # Separate rules by type for two-phase execution
+    schema_rules = [rule for rule in all_atomic_rules if rule.type == RuleType.SCHEMA]
+    other_rules = [rule for rule in all_atomic_rules if rule.type != RuleType.SCHEMA]
+
+    return schema_rules, other_rules
+
+
+def _decompose_schema_payload_atomic(
+    payload: Dict[str, Any], source_config: ConnectionSchema
 ) -> List[RuleSchema]:
     """Decompose a schema payload into atomic RuleSchema objects.
 
@@ -894,6 +915,193 @@ def _emit_json_output(
     _safe_echo(json.dumps(payload, default=str))
 
 
+class SchemaPhaseExecutor:
+    """Executor for Phase 1: Schema rules only with native type collection."""
+
+    def __init__(self, *, source_config: Any, core_config: Any, cli_config: Any):
+        """Init SchemaPhaseExecutor object"""
+        self.source_config = source_config
+        self.core_config = core_config
+        self.cli_config = cli_config
+
+    async def execute_schema_phase(
+        self, schema_rules: List[RuleSchema]
+    ) -> Tuple[List[Any], float, List[Dict[str, Any]]]:
+        """Execute schema rules and collect native type information.
+
+        Returns:
+            Tuple of (results, execution_seconds, schema_results)
+        """
+        logger.debug(f"Phase 1: Executing {len(schema_rules)} schema rules")
+
+        if not schema_rules:
+            return [], 0.0, []
+
+        validator = _create_validator(
+            source_config=self.source_config,
+            atomic_rules=schema_rules,
+            core_config=self.core_config,
+            cli_config=self.cli_config,
+        )
+
+        results, exec_seconds = _run_validation(validator)
+        schema_results = _extract_schema_results(
+            atomic_rules=schema_rules, results=results
+        )
+
+        logger.debug(
+            f"Phase 1: Completed in {exec_seconds:.3f}s with {len(schema_results)} "
+            "schema results"
+        )
+        return results, exec_seconds, schema_results
+
+
+class DesiredTypePhaseExecutor:
+    """
+    Executor for Phase 2: Additional rules based on schema analysis
+    (currently with skip semantics).
+    """
+
+    def __init__(
+        self, *, source_config: Any, core_config: Any, cli_config: Any
+    ) -> None:
+        """Init DesiredTypePhaseExecutor object"""
+        self.source_config = source_config
+        self.core_config = core_config
+        self.cli_config = cli_config
+
+    async def execute_additional_rules_phase(
+        self,
+        other_rules: List[RuleSchema],
+        schema_results: List[Dict[str, Any]],
+        skip_map: Dict[str, Dict[str, str]],
+    ) -> Tuple[List[Any], float]:
+        """Execute additional rules with filtering based on schema results.
+
+        Currently implements skip semantics for testing the two-phase framework.
+        Future versions will implement desired_type compatibility analysis.
+
+        Args:
+            other_rules: Non-schema rules to execute
+            schema_results: Results from schema phase for analysis
+            skip_map: Pre-computed skip decisions based on schema results
+
+        Returns:
+            Tuple of (results, execution_seconds)
+        """
+        logger.debug(
+            f"Phase 2: Executing {len(other_rules)} additional rules "
+            "with skip semantics"
+        )
+
+        if not other_rules:
+            return [], 0.0
+
+        # Filter out rules that should be skipped based on schema results
+        filtered_rules = []
+        skipped_count = 0
+
+        for rule in other_rules:
+            rule_id = str(rule.id)
+            if rule_id in skip_map:
+                skipped_count += 1
+                logger.debug(
+                    f"Phase 2: Skipping rule {rule.name} - "
+                    f"{skip_map[rule_id]['skip_reason']}"
+                )
+                continue
+            filtered_rules.append(rule)
+
+        logger.debug(
+            f"Phase 2: Executing {len(filtered_rules)} rules, skipping {skipped_count}"
+        )
+
+        if not filtered_rules:
+            return [], 0.0
+
+        validator = _create_validator(
+            source_config=self.source_config,
+            atomic_rules=filtered_rules,
+            core_config=self.core_config,
+            cli_config=self.cli_config,
+        )
+
+        results, exec_seconds = _run_validation(validator)
+        logger.debug(f"Phase 2: Completed in {exec_seconds:.3f}s")
+
+        return results, exec_seconds
+
+
+class ResultMerger:
+    """Merges results from two-phase execution to maintain existing output format."""
+
+    @staticmethod
+    def merge_results(
+        schema_results_list: List[Any],
+        additional_results_list: List[Any],
+        schema_rules: List[RuleSchema],
+        other_rules: List[RuleSchema],
+        skip_map: Dict[str, Dict[str, str]],
+    ) -> Tuple[List[Any], List[RuleSchema]]:
+        """Merge results from both phases and reconstruct skipped results.
+
+        Args:
+            schema_results_list: Results from schema phase
+            additional_results_list: Results from additional rules phase
+            schema_rules: Schema rules that were executed
+            other_rules: Other rules (some may have been skipped)
+            skip_map: Information about skipped rules
+
+        Returns:
+            Tuple of (combined_results, all_atomic_rules)
+        """
+        logger.debug("Merging results from two-phase execution")
+
+        # Combine all rules for consistent processing
+        all_atomic_rules = schema_rules + other_rules
+
+        # Start with executed results
+        combined_results = list(schema_results_list) + list(additional_results_list)
+
+        # Create synthetic results for skipped rules to maintain output consistency
+        executed_rule_ids = set()
+        for result in combined_results:
+            if hasattr(result, "rule_id"):
+                executed_rule_ids.add(str(result.rule_id))
+            elif isinstance(result, dict):
+                executed_rule_ids.add(str(result.get("rule_id", "")))
+
+        # Create placeholder results for skipped rules
+        for rule in other_rules:
+            rule_id = str(rule.id)
+            if rule_id in skip_map and rule_id not in executed_rule_ids:
+                # Create a synthetic result for skipped rule
+                synthetic_result = {
+                    "rule_id": rule.id,
+                    "status": "SKIPPED",
+                    "skip_reason": skip_map[rule_id]["skip_reason"],
+                    "dataset_metrics": [],
+                    "execution_time": 0.0,
+                    "execution_message": "Skipped due to "
+                    f"{skip_map[rule_id]['skip_reason']}",
+                    "error_message": None,
+                    "sample_data": None,
+                    "cross_db_metrics": None,
+                    "execution_plan": {},
+                    "started_at": None,
+                    "ended_at": None,
+                }
+                combined_results.append(synthetic_result)
+
+        logger.debug(
+            f"Merged {len(schema_results_list)} schema + "
+            f"{len(additional_results_list)} additional + {len(skip_map)} "
+            f"skipped = {len(combined_results)} total results"
+        )
+
+        return combined_results, all_atomic_rules
+
+
 def _emit_table_output(
     *,
     source: str,
@@ -1261,9 +1469,13 @@ def schema_command(
         warnings, rules_count = _validate_rules_payload(rules_payload)
         _emit_warnings(warnings, output)
 
-        atomic_rules = _decompose_schema_payload(rules_payload, source_config)
+        # Two-phase execution: separate schema and other rules
+        schema_rules, other_rules = _decompose_schema_payload(
+            rules_payload, source_config
+        )
+        all_atomic_rules = schema_rules + other_rules
 
-        if not atomic_rules:
+        if not all_atomic_rules:
             _early_exit_when_no_rules(
                 source=connection_string,
                 rules_file=rules_file,
@@ -1274,20 +1486,95 @@ def schema_command(
 
         core_config = get_core_config()
         cli_config = get_cli_config()
-        validator = _create_validator(
-            source_config=source_config,
-            atomic_rules=atomic_rules,
-            core_config=core_config,
-            cli_config=cli_config,
-        )
-        results, exec_seconds = _run_validation(validator)
 
-        schema_results = _extract_schema_results(
-            atomic_rules=atomic_rules, results=results
+        # Phase 1: Execute schema rules only
+        # schema_executor = SchemaPhaseExecutor(
+        #     source_config=source_config, core_config=core_config,
+        #     cli_config=cli_config
+        # )
+
+        # Execute two-phase validation in a single event loop to avoid
+        # connection issues
+        async def execute_two_phase_validation() -> tuple:
+            # start_time = _now()
+
+            # Phase 1: Execute schema rules only
+            if schema_rules:
+                schema_validator = _create_validator(
+                    source_config=source_config,
+                    atomic_rules=schema_rules,
+                    core_config=core_config,
+                    cli_config=cli_config,
+                )
+                schema_start = _now()
+                schema_results_list = await schema_validator.validate()
+                schema_exec_seconds = (_now() - schema_start).total_seconds()
+                schema_results = _extract_schema_results(
+                    atomic_rules=schema_rules, results=schema_results_list
+                )
+            else:
+                schema_results_list, schema_exec_seconds, schema_results = [], 0.0, []
+
+            # Compute skip logic based on schema results
+            skip_map = _compute_skip_map(
+                atomic_rules=all_atomic_rules, schema_results=schema_results
+            )
+
+            # Phase 2: Execute additional rules with skip semantics
+            if other_rules:
+                # Filter out rules that should be skipped based on schema results
+                filtered_rules = [
+                    rule for rule in other_rules if str(rule.id) not in skip_map
+                ]
+
+                if filtered_rules:
+                    additional_validator = _create_validator(
+                        source_config=source_config,
+                        atomic_rules=filtered_rules,
+                        core_config=core_config,
+                        cli_config=cli_config,
+                    )
+                    additional_start = _now()
+                    additional_results_list = await additional_validator.validate()
+                    additional_exec_seconds = (
+                        _now() - additional_start
+                    ).total_seconds()
+                else:
+                    additional_results_list, additional_exec_seconds = [], 0.0
+            else:
+                additional_results_list, additional_exec_seconds = [], 0.0
+
+            return (
+                schema_results_list,
+                schema_exec_seconds,
+                schema_results,
+                additional_results_list,
+                additional_exec_seconds,
+                skip_map,
+            )
+
+        import asyncio
+
+        (
+            schema_results_list,
+            schema_exec_seconds,
+            schema_results,
+            additional_results_list,
+            additional_exec_seconds,
+            skip_map,
+        ) = asyncio.run(execute_two_phase_validation())
+
+        # Merge results to maintain existing output format
+        results, atomic_rules = ResultMerger.merge_results(
+            schema_results_list,
+            additional_results_list,
+            schema_rules,
+            other_rules,
+            skip_map,
         )
-        skip_map = _compute_skip_map(
-            atomic_rules=atomic_rules, schema_results=schema_results
-        )
+
+        # Total execution time
+        exec_seconds = schema_exec_seconds + additional_exec_seconds
 
         if output.lower() == "json":
             _emit_json_output(
