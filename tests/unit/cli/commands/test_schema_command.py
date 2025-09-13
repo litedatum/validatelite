@@ -90,7 +90,7 @@ class TestSchemaCommandSkeleton:
 
         monkeypatch.setattr(
             "cli.commands.schema._decompose_schema_payload",
-            lambda payload, source_config: [schema_rule],
+            lambda payload, source_config: ([schema_rule], []),
         )
 
         class DummyValidator:

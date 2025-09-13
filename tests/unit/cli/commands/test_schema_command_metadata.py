@@ -11,7 +11,7 @@ Tests cover:
 import json
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 from unittest.mock import Mock
 
 import pytest
@@ -66,10 +66,12 @@ class TestSchemaCommandMetadataParsing:
         # Mock the entire schema command execution to avoid validation issues
         captured_rules = []
 
-        def mock_decompose(payload: Any, source_config: Any) -> List[Any]:
+        def mock_decompose(
+            payload: Any, source_config: Any
+        ) -> Tuple[List[Any], List[Any]]:
             captured_rules.append(payload)
             # Return empty rules to avoid validation errors
-            return []
+            return [], []
 
         # Mock DataValidator to avoid database connections
         class MockValidator:
@@ -132,10 +134,12 @@ class TestSchemaCommandMetadataParsing:
 
         captured_rules = []
 
-        def mock_decompose(payload: Any, source_config: Any) -> List[Any]:
+        def mock_decompose(
+            payload: Any, source_config: Any
+        ) -> Tuple[List[Any], List[Any]]:
             captured_rules.append(payload)
             # Return empty rules to avoid validation errors
-            return []
+            return [], []
 
         class MockValidator:
             def __init__(
@@ -187,10 +191,12 @@ class TestSchemaCommandMetadataParsing:
 
         captured_rules = []
 
-        def mock_decompose(payload: Any, source_config: Any) -> List[Any]:
+        def mock_decompose(
+            payload: Any, source_config: Any
+        ) -> Tuple[List[Any], List[Any]]:
             captured_rules.append(payload)
             # Return empty rules to avoid validation errors
-            return []
+            return [], []
 
         class MockValidator:
             def __init__(
@@ -259,10 +265,12 @@ class TestSchemaCommandRuleDecomposition:
 
         captured_rules = []
 
-        def mock_decompose(payload: Any, source_config: Any) -> List[Any]:
+        def mock_decompose(
+            payload: Any, source_config: Any
+        ) -> Tuple[List[Any], List[Any]]:
             captured_rules.append(payload)
             # Return empty rules to avoid validation errors
-            return []
+            return [], []
 
         class MockValidator:
             def __init__(
@@ -353,8 +361,10 @@ class TestSchemaCommandErrorHandling:
         )
 
         # Mock to allow us to see what happens with incomplete schema
-        def mock_decompose(payload: Any, source_config: Any) -> List[Any]:
-            return []  # Return empty to avoid further processing
+        def mock_decompose(
+            payload: Any, source_config: Any
+        ) -> Tuple[List[Any], List[Any]]:
+            return [], []  # Return empty to avoid further processing
 
         class MockValidator:
             def __init__(

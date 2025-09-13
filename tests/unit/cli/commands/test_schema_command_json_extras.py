@@ -44,7 +44,7 @@ class TestSchemaJsonExtrasAndSummary:
         )
         monkeypatch.setattr(
             "cli.commands.schema._decompose_schema_payload",
-            lambda payload, source_config: [schema_rule],
+            lambda payload, source_config: ([schema_rule], []),
         )
 
         # Results: SCHEMA failed with 1 type mismatch, 0 existence failures, extras present
@@ -135,7 +135,7 @@ class TestSchemaJsonExtrasAndSummary:
         schema_rule = _schema_rule_with({"id": {"expected_type": "INTEGER"}})
         monkeypatch.setattr(
             "cli.commands.schema._decompose_schema_payload",
-            lambda payload, source_config: [schema_rule],
+            lambda payload, source_config: ([schema_rule], []),
         )
 
         schema_result = {
