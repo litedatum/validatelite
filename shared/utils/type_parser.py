@@ -6,6 +6,7 @@ while maintaining backward compatibility with detailed JSON format.
 
 Supports formats like:
 - string(50) → {"type": "string", "max_length": 50}
+- integer(10) → {"type": "integer", "max_digits": 10}
 - float(12,2) → {"type": "float", "precision": 12, "scale": 2}
 - datetime('yyyymmdd') → {"type": "datetime", "format": "yyyymmdd"}
 """
@@ -43,6 +44,7 @@ class TypeParser:
 
     # Regex patterns for syntactic sugar parsing
     _STRING_PATTERN = re.compile(r"^(string|str)\s*\(\s*(-?\d+)\s*\)$", re.IGNORECASE)
+    _INTEGER_PATTERN = re.compile(r"^(integer|int)\s*\(\s*(-?\d+)\s*\)$", re.IGNORECASE)
     _FLOAT_PATTERN = re.compile(
         r"^float\s*\(\s*(-?\d+)\s*,\s*(-?\d+)\s*\)$", re.IGNORECASE
     )
@@ -117,6 +119,14 @@ class TypeParser:
                 raise TypeParseError("String length must be positive")
             return {"type": DataType.STRING.value, "max_length": length}
 
+        # Try integer(digits) pattern
+        match = cls._INTEGER_PATTERN.match(type_str)
+        if match:
+            digits = int(match.group(2))
+            if digits <= 0:
+                raise TypeParseError("Integer digits must be positive")
+            return {"type": DataType.INTEGER.value, "max_digits": digits}
+
         # Try float(precision,scale) pattern
         match = cls._FLOAT_PATTERN.match(type_str)
         if match:
@@ -166,6 +176,19 @@ class TypeParser:
             ):
                 raise TypeParseError("max_length must be a positive integer")
 
+        # Validate max_digits is only for integers
+        if "max_digits" in parsed_type:
+            if type_value != DataType.INTEGER.value:
+                raise TypeParseError(
+                    "max_digits can only be specified for INTEGER type, "
+                    f"not {type_value}"
+                )
+            if (
+                not isinstance(parsed_type["max_digits"], int)
+                or parsed_type["max_digits"] <= 0
+            ):
+                raise TypeParseError("max_digits must be a positive integer")
+
         # Validate precision/scale are only for floats
         if "precision" in parsed_type or "scale" in parsed_type:
             if type_value != DataType.FLOAT.value:
@@ -206,6 +229,7 @@ class TypeParser:
         type_str = type_def.strip()
         return bool(
             cls._STRING_PATTERN.match(type_str)
+            or cls._INTEGER_PATTERN.match(type_str)
             or cls._FLOAT_PATTERN.match(type_str)
             or cls._DATETIME_PATTERN.match(type_str)
             or cls._SIMPLE_TYPE_PATTERN.match(type_str)

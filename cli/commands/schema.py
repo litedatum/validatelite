@@ -17,7 +17,9 @@ import click
 
 from cli.core.data_validator import DataValidator
 from cli.core.source_parser import SourceParser
+from shared.database.database_dialect import DatabaseDialectFactory
 from shared.enums import RuleAction, RuleCategory, RuleType, SeverityLevel
+from shared.enums.connection_types import ConnectionType
 from shared.enums.data_types import DataType
 from shared.schema.base import RuleTarget, TargetEntity
 from shared.schema.connection_schema import ConnectionSchema
@@ -45,15 +47,31 @@ class CompatibilityResult:
 class CompatibilityAnalyzer:
     """
     Analyzes type compatibility between native database types and desired types.
-    
+
     Implements the compatibility matrix from the design document to determine:
     - COMPATIBLE: Skip desired_type validation (type conversions that always work)
     - INCOMPATIBLE: Require data validation (type conversions needing checks)
     - CONFLICTING: Report error immediately (impossible conversions)
     """
 
-    @classmethod
-    def analyze(cls, native_type: str, desired_type: str, field_name: str, table_name: str, native_metadata: Dict[str, Any] = None) -> CompatibilityResult:
+    def __init__(self, connection_type: ConnectionType):
+        """Initialize with database connection type for dialect-specific pattern generation."""
+        self.connection_type = connection_type
+        # Map ConnectionType to DatabaseDialectFactory database type
+        dialect_type_mapping = {
+            ConnectionType.MYSQL: "mysql",
+            ConnectionType.POSTGRESQL: "postgresql",
+            ConnectionType.SQLITE: "sqlite",
+            ConnectionType.MSSQL: "sqlserver"
+        }
+        dialect_type = dialect_type_mapping.get(connection_type)
+        if dialect_type:
+            self.dialect = DatabaseDialectFactory.get_dialect(dialect_type)
+        else:
+            # Fallback to MySQL for unsupported database types
+            self.dialect = DatabaseDialectFactory.get_dialect("mysql")
+
+    def analyze(self, native_type: str, desired_type: str, field_name: str, table_name: str, native_metadata: Dict[str, Any] = None) -> CompatibilityResult:
         """
         Analyze compatibility between native and desired types.
         
@@ -122,6 +140,68 @@ class CompatibilityAnalyzer:
                     # If parsing fails, fall back to compatible
                     pass
             
+            # For INTEGER types, check if precision constraints require validation
+            if native_canonical == "INTEGER":
+                try:
+                    # Parse desired type to get constraints
+                    desired_parsed = TypeParser.parse_type_definition(str(desired_type))
+                    desired_max_digits = desired_parsed.get("max_digits")  # For INTEGER constraints
+                    desired_precision = desired_parsed.get("precision")   # For FLOAT constraints
+                    
+                    if desired_canonical == "INTEGER" and desired_max_digits is not None:
+                        # INTEGER → INTEGER with digit constraint - use REGEX validation
+                        pattern = self.dialect.generate_integer_regex_pattern(desired_max_digits)
+                        return CompatibilityResult(
+                            field_name=field_name,
+                            table_name=table_name,
+                            native_type=native_type,
+                            desired_type=desired_type,
+                            compatibility="INCOMPATIBLE",
+                            reason=f"INTEGER precision constraint: unlimited -> {desired_max_digits} digits",
+                            required_validation="REGEX",
+                            validation_params={"pattern": pattern, "description": f"Integer precision validation for max {desired_max_digits} digits"}
+                        )
+                except:
+                    # If parsing fails, fall back to compatible
+                    pass
+            
+            # For FLOAT types, check if precision/scale constraints require validation  
+            if native_canonical == "FLOAT":
+                try:
+                    # Get native precision/scale from metadata
+                    native_precision = native_metadata.get("precision")
+                    native_scale = native_metadata.get("scale")
+                    
+                    # Parse desired type to get constraints
+                    desired_parsed = TypeParser.parse_type_definition(str(desired_type))
+                    desired_precision = desired_parsed.get("precision")
+                    desired_scale = desired_parsed.get("scale")
+                    
+                    if desired_canonical == "FLOAT" and desired_precision is not None:
+                        # FLOAT → FLOAT with precision/scale constraints
+                        precision_tightened = native_precision is None or (native_precision > desired_precision)
+                        scale_tightened = native_scale is None or (desired_scale is not None and native_scale > desired_scale)
+                        
+                        if precision_tightened or scale_tightened:
+                            # FLOAT → FLOAT with precision/scale constraint - use REGEX validation
+                            scale = desired_scale or 0
+                            integer_digits = desired_precision - scale
+                            pattern = self.dialect.generate_float_regex_pattern(desired_precision, scale)
+                            
+                            return CompatibilityResult(
+                                field_name=field_name,
+                                table_name=table_name,
+                                native_type=native_type,
+                                desired_type=desired_type,
+                                compatibility="INCOMPATIBLE",
+                                reason=f"FLOAT precision/scale constraint: ({native_precision or 'unlimited'},{native_scale or 'unlimited'}) -> ({desired_precision},{scale})",
+                                required_validation="REGEX",
+                                validation_params={"pattern": pattern, "description": f"Float precision/scale validation for ({desired_precision},{scale})"}
+                            )
+                except:
+                    # If parsing fails, fall back to compatible
+                    pass
+
             # Same canonical type with no stricter constraints
             return CompatibilityResult(
                 field_name=field_name,
@@ -141,7 +221,7 @@ class CompatibilityAnalyzer:
             ("INTEGER", "STRING"): "COMPATIBLE",
             ("INTEGER", "INTEGER"): "COMPATIBLE", 
             ("INTEGER", "FLOAT"): "COMPATIBLE",
-            ("INTEGER", "DATETIME"): "CONFLICTING",
+            ("INTEGER", "DATETIME"): "INCOMPATIBLE",
             ("FLOAT", "STRING"): "COMPATIBLE",
             ("FLOAT", "INTEGER"): "INCOMPATIBLE",
             ("FLOAT", "FLOAT"): "COMPATIBLE",
@@ -161,16 +241,62 @@ class CompatibilityAnalyzer:
             native_type=native_type,
             desired_type=desired_type,
             compatibility=compatibility_status,
-            reason=cls._get_compatibility_reason(native_canonical, desired_canonical, compatibility_status)
+            reason=self._get_compatibility_reason(native_canonical, desired_canonical, compatibility_status)
         )
         
         # For incompatible cases, determine required validation type
         if compatibility_status == "INCOMPATIBLE":
-            validation_type, validation_params = cls._determine_validation_requirements(
-                native_canonical, desired_canonical
+            validation_type, validation_params = self._determine_validation_requirements(
+                native_canonical, desired_canonical, desired_type
             )
             result.required_validation = validation_type
             result.validation_params = validation_params
+        
+        # Check for cross-type numeric constraints (even for COMPATIBLE cases)
+        if compatibility_status == "COMPATIBLE" and native_canonical == "INTEGER" and desired_canonical == "FLOAT":
+            try:
+                # Parse desired FLOAT type to get precision/scale constraints
+                desired_parsed = TypeParser.parse_type_definition(str(desired_type))
+                desired_precision = desired_parsed.get("precision")
+                
+                if desired_precision is not None:
+                    desired_scale = desired_parsed.get("scale", 0)
+                    integer_digits = desired_precision - desired_scale
+                    
+                    if integer_digits > 0:
+                        # Override compatibility status for cross-type precision constraints
+                        pattern = self.dialect.generate_integer_regex_pattern(integer_digits)
+                        result.compatibility = "INCOMPATIBLE"
+                        result.reason = f"Cross-type precision constraint: INTEGER -> FLOAT({desired_precision},{desired_scale}) allows max {integer_digits} integer digits"
+                        result.required_validation = "REGEX"
+                        result.validation_params = {
+                            "pattern": pattern,
+                            "description": f"Cross-type integer-to-float precision validation for max {integer_digits} integer digits"
+                        }
+            except:
+                # If parsing fails, keep original compatibility status
+                pass
+        
+        # Check for cross-type length constraints (even for COMPATIBLE cases)
+        if compatibility_status == "COMPATIBLE" and desired_canonical == "STRING":
+            try:
+                # Parse desired type to get constraints
+                desired_parsed = TypeParser.parse_type_definition(str(desired_type))
+                desired_max_length = desired_parsed.get("max_length")
+                
+                # If desired STRING type has length constraint, need validation for cross-type conversions
+                if desired_max_length is not None and native_canonical != "STRING":
+                    # Override compatibility status for cross-type length constraints
+                    result.compatibility = "INCOMPATIBLE"
+                    result.reason = f"Cross-type length constraint: {native_canonical} -> STRING({desired_max_length})"
+                    result.required_validation = "LENGTH"
+                    result.validation_params = {
+                        "max_length": desired_max_length, 
+                        "description": f"Cross-type length validation for max {desired_max_length} characters"
+                    }
+            except:
+                # If parsing fails, keep original compatibility status
+                pass
             
         return result
     
@@ -187,32 +313,57 @@ class CompatibilityAnalyzer:
         else:  # CONFLICTING
             return f"{native} to {desired} conversion is not supported"
     
-    @classmethod
-    def _determine_validation_requirements(cls, native: str, desired: str) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+    def _determine_validation_requirements(self, native: str, desired: str, desired_type_definition: str = None) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
         """
         Determine what type of validation rules are needed for incompatible conversions.
         
         Returns:
             Tuple of (validation_type, validation_params) where:
-            - validation_type: "LENGTH", "REGEX", or "DATE_FORMAT"  
+            - validation_type: "LENGTH", "REGEX", "DATE_FORMAT", or "PRECISION"  
             - validation_params: Parameters for the validation rule
         """
         if native == "STRING" and desired == "INTEGER":
             # String to integer needs regex validation
-            return "REGEX", {"pattern": r"^-?\d+$", "description": "Integer format validation"}
-            
+            pattern = self.dialect.generate_basic_integer_pattern()
+            return "REGEX", {"pattern": pattern, "description": "Integer format validation"}
+
         elif native == "STRING" and desired == "FLOAT":
-            # String to float needs regex validation  
-            return "REGEX", {"pattern": r"^-?\d+(\.\d+)?$", "description": "Float format validation"}
+            # String to float needs regex validation
+            pattern = self.dialect.generate_basic_float_pattern()
+            return "REGEX", {"pattern": pattern, "description": "Float format validation"}
             
-        elif desired == "DATETIME":
-            # Any type to datetime needs date format validation
-            return "DATE_FORMAT", {"format_pattern": "YYYY-MM-DD", "description": "Date format validation"}
+        elif native == "STRING" and desired == "DATETIME":
+            # String to datetime needs date format validation
+            format_pattern = "YYYY-MM-DD"  # default
+            if desired_type_definition:
+                try:
+                    from shared.utils.type_parser import TypeParser
+                    parsed = TypeParser.parse_type_definition(desired_type_definition)
+                    format_pattern = parsed.get("format", format_pattern)
+                except:
+                    pass  # use default if parsing fails
+            return "DATE_FORMAT", {"format_pattern": format_pattern, "description": "String date format validation"}
+            
+        elif native == "INTEGER" and desired == "DATETIME":
+            # Integer to datetime needs date format validation
+            format_pattern = "YYYYMMDD"  # default
+            if desired_type_definition:
+                try:
+                    from shared.utils.type_parser import TypeParser
+                    parsed = TypeParser.parse_type_definition(desired_type_definition)
+                    format_pattern = parsed.get("format", format_pattern)
+                except:
+                    pass  # use default if parsing fails
+            return "DATE_FORMAT", {"format_pattern": format_pattern, "description": "Integer date format validation"}
             
         elif native == "FLOAT" and desired == "INTEGER":
             # Float to integer needs validation that it's actually an integer value
-            return "REGEX", {"pattern": r"^-?\d+\.0*$", "description": "Integer-like float validation"}
-            
+            pattern = self.dialect.generate_integer_like_float_pattern()
+            return "REGEX", {"pattern": pattern, "description": "Integer-like float validation"}
+        
+        # Note: PRECISION validation types are handled by generating REGEX patterns
+        # This is called from compatibility analysis when precision/scale constraints are detected
+        
         # Default: no specific validation requirements determined
         return None, None
 
@@ -227,11 +378,12 @@ class DesiredTypeRuleGenerator:
 
     @classmethod
     def generate_rules(
-        cls, 
+        cls,
         compatibility_results: List[CompatibilityResult],
-        table_name: str, 
+        table_name: str,
         source_db: str,
-        desired_type_metadata: Dict[str, Dict[str, Any]]
+        desired_type_metadata: Dict[str, Dict[str, Any]],
+        dialect: Any = None  # Database dialect for pattern generation
     ) -> List[RuleSchema]:
         """
         Generate validation rules based on compatibility analysis results.
@@ -264,22 +416,25 @@ class DesiredTypeRuleGenerator:
             field_metadata = desired_type_metadata.get(field_name, {})
             
             if validation_type == "REGEX":
+                safe_source_db = source_db if source_db is not None else 'unknown'
                 rule = cls._generate_regex_rule(
-                    field_name, table_name, source_db, validation_params, field_metadata
+                    field_name, table_name, safe_source_db, validation_params, field_metadata, dialect
                 )
                 if rule:
                     generated_rules.append(rule)
                     
             elif validation_type == "LENGTH":
+                safe_source_db = source_db if source_db is not None else 'unknown'
                 rule = cls._generate_length_rule(
-                    field_name, table_name, source_db, validation_params, field_metadata
+                    field_name, table_name, safe_source_db, validation_params, field_metadata
                 )
                 if rule:
                     generated_rules.append(rule)
                     
             elif validation_type == "DATE_FORMAT":
+                safe_source_db = source_db if source_db is not None else 'unknown'
                 rule = cls._generate_date_format_rule(
-                    field_name, table_name, source_db, validation_params, field_metadata
+                    field_name, table_name, safe_source_db, validation_params, field_metadata
                 )
                 if rule:
                     generated_rules.append(rule)
@@ -289,12 +444,13 @@ class DesiredTypeRuleGenerator:
     
     @classmethod
     def _generate_regex_rule(
-        cls, 
-        field_name: str, 
-        table_name: str, 
+        cls,
+        field_name: str,
+        table_name: str,
         source_db: str,
         validation_params: Dict[str, Any],
-        field_metadata: Dict[str, Any]
+        field_metadata: Dict[str, Any],
+        dialect: Any = None
     ) -> Optional[RuleSchema]:
         """Generate REGEX rule for string format validation."""
         pattern = validation_params.get("pattern")
@@ -302,19 +458,18 @@ class DesiredTypeRuleGenerator:
             return None
         
         # Enhance pattern with desired type metadata if available
-        if "desired_precision" in field_metadata and "desired_scale" in field_metadata:
+        if dialect and "desired_precision" in field_metadata and "desired_scale" in field_metadata:
             # For float patterns, use precision and scale from metadata
             precision = field_metadata["desired_precision"]
             scale = field_metadata["desired_scale"]
-            integer_digits = precision - scale
-            if integer_digits > 0 and scale >= 0:
-                pattern = rf"^-?\d{{1,{integer_digits}}}(\.\d{{1,{scale}}})?$"
-        
-        elif "desired_max_length" in field_metadata:
+            if precision > 0 and scale >= 0:
+                pattern = dialect.generate_float_regex_pattern(precision, scale)
+
+        elif dialect and "desired_max_length" in field_metadata:
             # For string patterns, limit length
             max_length = field_metadata["desired_max_length"]
             if "integer" in validation_params.get("description", "").lower():
-                pattern = rf"^-?\d{{1,{max_length}}}$"
+                pattern = dialect.generate_integer_regex_pattern(max_length)
         
         return _create_rule_schema(
             name=f"desired_type_regex_{field_name}",
@@ -638,7 +793,7 @@ def _create_rule_schema(
     target = RuleTarget(
         entities=[
             TargetEntity(
-                database="", table="", column=column, connection_id=None, alias=None
+                database="unknown", table="unknown", column=column, connection_id=None, alias=None
             )
         ],
         relationship_type="single_table",
@@ -1393,7 +1548,11 @@ class DesiredTypePhaseExecutor:
         logger.debug("Phase 2: Starting desired_type validation with compatibility analysis")
         logger.debug(f"Schema results count: {len(schema_results)}")
         logger.debug(f"Original payload keys: {list(original_payload.keys())}")
-        
+
+        # Create compatibility analyzer with database connection type
+        connection_type = getattr(self.source_config, 'connection_type', ConnectionType.MYSQL)
+        analyzer = CompatibilityAnalyzer(connection_type)
+
         # Extract native types from schema results
         native_types = self._extract_native_types_from_schema_results(schema_results)
         
@@ -1437,7 +1596,7 @@ class DesiredTypePhaseExecutor:
             logger.debug(f"Analyzing compatibility for {field_name}: {native_type} -> {original_desired_type}")
             
             # Perform compatibility analysis using original desired_type for proper parsing
-            compatibility_result = CompatibilityAnalyzer.analyze(
+            compatibility_result = analyzer.analyze(
                 native_type=native_type,
                 desired_type=original_desired_type,  # Use original string for parsing
                 field_name=field_name,
@@ -1479,7 +1638,8 @@ class DesiredTypePhaseExecutor:
                     tables_with_incompatible_fields[table_name].append(result)
             
             # Generate rules for each table
-            source_db = getattr(self.source_config, 'db_name', 'unknown')
+            source_db = getattr(self.source_config, 'db_name', None)
+            source_db = source_db if source_db is not None else 'unknown'
             for table_name, table_results in tables_with_incompatible_fields.items():
                 # Extract desired type metadata for this table
                 table_metadata = {
@@ -1491,7 +1651,8 @@ class DesiredTypePhaseExecutor:
                     compatibility_results=table_results,
                     table_name=table_name,
                     source_db=source_db,
-                    desired_type_metadata=table_metadata
+                    desired_type_metadata=table_metadata,
+                    dialect=analyzer.dialect
                 )
                 generated_rules.extend(table_rules)
         
@@ -1504,7 +1665,21 @@ class DesiredTypePhaseExecutor:
             # Set target information for generated rules
             for rule in generated_rules:
                 if rule.target and rule.target.entities:
-                    rule.target.entities[0].database = getattr(self.source_config, 'db_name', 'unknown')
+                    entity = rule.target.entities[0]
+                    # Ensure database name is never None
+                    db_name = getattr(self.source_config, 'db_name', None)
+                    entity.database = db_name if db_name is not None else 'unknown'
+
+                    # Get table name from the field metadata using the column name
+                    field_name = entity.column
+                    if field_name and field_name in desired_type_definitions:
+                        entity.table = desired_type_definitions[field_name]['table']
+                    else:
+                        # Fallback: try to extract from existing source config
+                        if hasattr(self.source_config, 'available_tables') and self.source_config.available_tables:
+                            entity.table = self.source_config.available_tables[0]
+                        else:
+                            entity.table = 'unknown'
             
             validator = _create_validator(
                 source_config=self.source_config,

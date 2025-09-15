@@ -229,6 +229,12 @@ class ValidityExecutor(BaseExecutor):
         start_time = time.time()
         table_name = self._safe_get_table_name(rule)
 
+        # Check if database supports regex operations
+        if not self.dialect.supports_regex():
+            raise RuleExecutionError(
+                f"REGEX rule is not supported for {self.dialect.__class__.__name__}"
+            )
+
         try:
             # Generate validation SQL
             sql = self._generate_regex_sql(rule)
@@ -560,8 +566,11 @@ class ValidityExecutor(BaseExecutor):
         escaped_pattern = pattern.replace("'", "''")
         regex_op = self.dialect.get_not_regex_operator()
 
+        # Cast column for regex operations if needed (PostgreSQL requires casting for non-text columns)
+        regex_column = self.dialect.cast_column_for_regex(column)
+
         # Generate REGEXP expression using the dialect
-        where_clause = f"WHERE {column} {regex_op} '{escaped_pattern}'"
+        where_clause = f"WHERE {regex_column} {regex_op} '{escaped_pattern}'"
 
         if filter_condition:
             where_clause += f" AND ({filter_condition})"

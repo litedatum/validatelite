@@ -235,8 +235,10 @@ class ValidationRuleMerger(BaseRuleMerger):
                 # Because MySQL's REGEXP operator does not support parameterized queries
                 escaped_pattern = pattern.replace("'", "''")  # Escape single quotes
                 regex_op = self.dialect.get_not_regex_operator()
+                # Cast column for regex operations if needed (PostgreSQL requires casting for non-text columns)
+                regex_column = self.dialect.cast_column_for_regex(column)
                 case_clause = (
-                    f"CASE WHEN {column} {regex_op} '{escaped_pattern}' THEN 1 END"
+                    f"CASE WHEN {regex_column} {regex_op} '{escaped_pattern}' THEN 1 END"
                 )
             else:
                 case_clause = "CASE WHEN 1=0 THEN 1 END"
@@ -459,8 +461,10 @@ class ValidationRuleMerger(BaseRuleMerger):
                 # Directly embed regex pattern, do not use parameterized query
                 escaped_pattern = pattern.replace("'", "''")  # Escape single quotes
                 regex_op = self.dialect.get_not_regex_operator()
+                # Cast column for regex operations if needed (PostgreSQL requires casting for non-text columns)
+                regex_column = self.dialect.cast_column_for_regex(column)
                 return (
-                    f"SELECT * FROM {table_name} WHERE {column} {regex_op} "
+                    f"SELECT * FROM {table_name} WHERE {regex_column} {regex_op} "
                     f"'{escaped_pattern}' LIMIT {max_samples}"
                 )
 
