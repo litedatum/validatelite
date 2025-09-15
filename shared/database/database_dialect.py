@@ -805,6 +805,38 @@ class SQLiteDialect(DatabaseDialect):
         """SQLite does not have built-in regex support"""
         return False
 
+    def generate_custom_validation_condition(self, validation_type: str, column: str, **params) -> str:
+        """
+        生成使用SQLite自定义函数的验证条件
+
+        Args:
+            validation_type: 验证类型 ('integer_digits', 'string_length', 'float_precision')
+            column: 列名
+            **params: 验证参数
+
+        Returns:
+            SQL条件字符串，用于WHERE子句中检测失败情况
+        """
+        if validation_type == "integer_digits":
+            max_digits = params.get('max_digits', 10)
+            return f"DETECT_INVALID_INTEGER_DIGITS({column}, {max_digits})"
+
+        elif validation_type == "string_length":
+            max_length = params.get('max_length', 255)
+            return f"DETECT_INVALID_STRING_LENGTH({column}, {max_length})"
+
+        elif validation_type == "float_precision":
+            precision = params.get('precision', 10)
+            scale = params.get('scale', 2)
+            return f"DETECT_INVALID_FLOAT_PRECISION({column}, {precision}, {scale})"
+
+        else:
+            raise ValueError(f"Unsupported validation type for SQLite: {validation_type}")
+
+    def can_use_custom_functions(self) -> bool:
+        """SQLite支持自定义函数"""
+        return True
+
 
 class SQLServerDialect(DatabaseDialect):
     """SQL Server dialect"""

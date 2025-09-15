@@ -13,7 +13,7 @@ import asyncio  # For locking
 from enum import Enum
 from typing import Any, Dict, Optional, Union
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -44,6 +44,41 @@ _engine_cache: Dict[str, AsyncEngine] = {}
 _engine_creation_lock = (
     asyncio.Lock()
 )  # To prevent race conditions during engine creation
+
+
+def _register_sqlite_functions(dbapi_connection, connection_record):
+    """
+    注册SQLite自定义验证函数
+
+    在每次SQLite连接建立时自动调用，注册用于数值精度验证的自定义函数
+    """
+    from shared.database.sqlite_functions import (
+        detect_invalid_integer_digits,
+        detect_invalid_string_length,
+        detect_invalid_float_precision
+    )
+
+    try:
+        # 注册整数位数验证函数
+        dbapi_connection.create_function(
+            "DETECT_INVALID_INTEGER_DIGITS", 2, detect_invalid_integer_digits
+        )
+
+        # 注册字符串长度验证函数
+        dbapi_connection.create_function(
+            "DETECT_INVALID_STRING_LENGTH", 2, detect_invalid_string_length
+        )
+
+        # 注册浮点数精度验证函数
+        dbapi_connection.create_function(
+            "DETECT_INVALID_FLOAT_PRECISION", 3, detect_invalid_float_precision
+        )
+
+        logger.debug("SQLite自定义验证函数注册成功")
+
+    except Exception as e:
+        logger.warning(f"SQLite自定义函数注册失败: {e}")
+        # 不抛出异常，允许连接继续建立
 
 
 def get_db_url(
@@ -209,6 +244,9 @@ async def get_engine(
                     # to avoid connection issues
                     pool_pre_ping=True,  # Enable connection health checks
                 )
+
+                # 注册事件监听器，在每次连接建立时注册自定义函数
+                event.listen(engine.sync_engine, "connect", _register_sqlite_functions)
             elif db_url.startswith(ConnectionType.CSV) or db_url.startswith(
                 ConnectionType.EXCEL
             ):

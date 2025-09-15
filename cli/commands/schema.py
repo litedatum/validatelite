@@ -179,25 +179,23 @@ class CompatibilityAnalyzer:
                     
                     if desired_canonical == "FLOAT" and desired_precision is not None:
                         # FLOAT → FLOAT with precision/scale constraints
-                        precision_tightened = native_precision is None or (native_precision > desired_precision)
-                        scale_tightened = native_scale is None or (desired_scale is not None and native_scale > desired_scale)
-                        
-                        if precision_tightened or scale_tightened:
-                            # FLOAT → FLOAT with precision/scale constraint - use REGEX validation
-                            scale = desired_scale or 0
-                            integer_digits = desired_precision - scale
-                            pattern = self.dialect.generate_float_regex_pattern(desired_precision, scale)
-                            
-                            return CompatibilityResult(
-                                field_name=field_name,
-                                table_name=table_name,
-                                native_type=native_type,
-                                desired_type=desired_type,
-                                compatibility="INCOMPATIBLE",
-                                reason=f"FLOAT precision/scale constraint: ({native_precision or 'unlimited'},{native_scale or 'unlimited'}) -> ({desired_precision},{scale})",
-                                required_validation="REGEX",
-                                validation_params={"pattern": pattern, "description": f"Float precision/scale validation for ({desired_precision},{scale})"}
-                            )
+                        # For desired_type validation, always enforce constraints regardless of native metadata
+                        # because actual data may not conform to database-reported constraints
+                        scale = desired_scale or 0
+                        integer_digits = desired_precision - scale
+                        pattern = self.dialect.generate_float_regex_pattern(desired_precision, scale)
+
+
+                        return CompatibilityResult(
+                            field_name=field_name,
+                            table_name=table_name,
+                            native_type=native_type,
+                            desired_type=desired_type,
+                            compatibility="INCOMPATIBLE",
+                            reason=f"FLOAT precision/scale constraint validation: desired ({desired_precision},{scale})",
+                            required_validation="REGEX",
+                            validation_params={"pattern": pattern, "description": f"Float precision/scale validation for ({desired_precision},{scale})"}
+                        )
                 except:
                     # If parsing fails, fall back to compatible
                     pass
@@ -475,7 +473,10 @@ class DesiredTypeRuleGenerator:
             name=f"desired_type_regex_{field_name}",
             rule_type=RuleType.REGEX,
             column=field_name,
-            parameters={"pattern": pattern},
+            parameters={
+                "pattern": pattern,
+                "description": validation_params.get('description', 'format validation')
+            },
             description=f"Desired type validation: {validation_params.get('description', 'format validation')}"
         )
     
