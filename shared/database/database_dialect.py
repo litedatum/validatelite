@@ -94,16 +94,16 @@ class DatabaseDialect(ABC):
         """Generate database-specific regex pattern for integer validation"""
         pass
 
-    @abstractmethod  
+    @abstractmethod
     def generate_float_regex_pattern(self, precision: int, scale: int) -> str:
         """Generate database-specific regex pattern for float validation"""
         pass
-        
+
     @abstractmethod
     def generate_basic_integer_pattern(self) -> str:
         """Generate database-specific regex pattern for basic integer validation"""
         pass
-        
+
     @abstractmethod
     def generate_basic_float_pattern(self) -> str:
         """Generate database-specific regex pattern for basic float validation"""
@@ -272,31 +272,31 @@ class MySQLDialect(DatabaseDialect):
         """MySQL uses STR_TO_DATE for date formatting"""
         # Step 1: Convert pattern format (YYYY -> %Y, MM -> %m, DD -> %d)
         pattern = format_pattern
-        pattern = pattern.replace('YYYY', '%Y')
-        pattern = pattern.replace('MM', '%m') 
-        pattern = pattern.replace('DD', '%d')
-        
+        pattern = pattern.replace("YYYY", "%Y")
+        pattern = pattern.replace("MM", "%m")
+        pattern = pattern.replace("DD", "%d")
+
         pattern_len = len(format_pattern)
         if "%Y" in format_pattern:
             pattern_len = pattern_len - 2
         # Step 2-4: Check for missing components and build postfix
-        postfix = ''
-        
+        postfix = ""
+
         # Check for %Y, add if missing
-        if '%Y' not in pattern:
-            pattern += '%Y'
-            postfix += '2000'
-        
-        # Check for %m, add if missing  
-        if '%m' not in pattern:
-            pattern += '%m'
-            postfix += '01'
-        
+        if "%Y" not in pattern:
+            pattern += "%Y"
+            postfix += "2000"
+
+        # Check for %m, add if missing
+        if "%m" not in pattern:
+            pattern += "%m"
+            postfix += "01"
+
         # Check for %d, add if missing
-        if '%d' not in pattern:
-            pattern += '%d' 
-            postfix += '01'
-        
+        if "%d" not in pattern:
+            pattern += "%d"
+            postfix += "01"
+
         # Step 5: Return the formatted STR_TO_DATE clause
         return (
             f"STR_TO_DATE("
@@ -386,11 +386,11 @@ class MySQLDialect(DatabaseDialect):
             return f"^-?[0-9]{{1,{integer_digits}}}(\\.[0-9]{{1,{scale}}})?$"
         else:
             return f"^-?[0-9]{{1,{precision}}}\\.?0*$"
-            
+
     def generate_basic_integer_pattern(self) -> str:
         """Generate MySQL-specific regex pattern for basic integer validation"""
         return "^-?[0-9]+$"
-        
+
     def generate_basic_float_pattern(self) -> str:
         """Generate MySQL-specific regex pattern for basic float validation"""
         return "^-?[0-9]+(\\.[0-9]+)?$"
@@ -805,7 +805,9 @@ class SQLiteDialect(DatabaseDialect):
         """SQLite does not have built-in regex support"""
         return False
 
-    def generate_custom_validation_condition(self, validation_type: str, column: str, **params) -> str:
+    def generate_custom_validation_condition(
+        self, validation_type: str, column: str, **params
+    ) -> str:
         """
         生成使用SQLite自定义函数的验证条件
 
@@ -818,20 +820,22 @@ class SQLiteDialect(DatabaseDialect):
             SQL条件字符串，用于WHERE子句中检测失败情况
         """
         if validation_type == "integer_digits":
-            max_digits = params.get('max_digits', 10)
+            max_digits = params.get("max_digits", 10)
             return f"DETECT_INVALID_INTEGER_DIGITS({column}, {max_digits})"
 
         elif validation_type == "string_length":
-            max_length = params.get('max_length', 255)
+            max_length = params.get("max_length", 255)
             return f"DETECT_INVALID_STRING_LENGTH({column}, {max_length})"
 
         elif validation_type == "float_precision":
-            precision = params.get('precision', 10)
-            scale = params.get('scale', 2)
+            precision = params.get("precision", 10)
+            scale = params.get("scale", 2)
             return f"DETECT_INVALID_FLOAT_PRECISION({column}, {precision}, {scale})"
 
         else:
-            raise ValueError(f"Unsupported validation type for SQLite: {validation_type}")
+            raise ValueError(
+                f"Unsupported validation type for SQLite: {validation_type}"
+            )
 
     def can_use_custom_functions(self) -> bool:
         """SQLite支持自定义函数"""

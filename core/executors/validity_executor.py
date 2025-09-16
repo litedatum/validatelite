@@ -232,7 +232,10 @@ class ValidityExecutor(BaseExecutor):
         # Check if database supports regex operations
         if not self.dialect.supports_regex():
             # 对于SQLite，尝试使用自定义函数替代REGEX
-            if hasattr(self.dialect, 'can_use_custom_functions') and self.dialect.can_use_custom_functions():
+            if (
+                hasattr(self.dialect, "can_use_custom_functions")
+                and self.dialect.can_use_custom_functions()
+            ):
                 return await self._execute_sqlite_custom_regex_rule(rule)
             else:
                 raise RuleExecutionError(
@@ -615,7 +618,9 @@ class ValidityExecutor(BaseExecutor):
 
         return f"SELECT COUNT(*) AS anomaly_count FROM {table} {where_clause}"
 
-    async def _execute_sqlite_custom_regex_rule(self, rule: RuleSchema) -> ExecutionResultSchema:
+    async def _execute_sqlite_custom_regex_rule(
+        self, rule: RuleSchema
+    ) -> ExecutionResultSchema:
         """使用SQLite自定义函数执行REGEX规则的替代方案"""
         import time
 
@@ -716,48 +721,58 @@ class ValidityExecutor(BaseExecutor):
 
         # 根据规则名称和pattern判断验证类型并生成相应的条件
         validation_condition = None
-        rule_name = getattr(rule, 'name', '')
+        rule_name = getattr(rule, "name", "")
 
         # 首先检查规则名称包含的信息
-        if 'regex' in rule_name and 'age' in rule_name:
+        if "regex" in rule_name and "age" in rule_name:
             # integer(2) 类型验证 - 从pattern提取
             max_digits = self._extract_digits_from_rule(rule)
             # print(f"DEBUG: Extracted max_digits for age: {max_digits}")
             if max_digits:
-                validation_condition = self.dialect.generate_custom_validation_condition(
-                    "integer_digits", column, max_digits=max_digits
+                validation_condition = (
+                    self.dialect.generate_custom_validation_condition(
+                        "integer_digits", column, max_digits=max_digits
+                    )
                 )
                 # print(f"DEBUG: Generated integer digits validation: {validation_condition}")
 
-        elif 'length' in rule_name and 'price' in rule_name:
+        elif "length" in rule_name and "price" in rule_name:
             # string(3) 类型验证 - 从pattern提取
             max_length = self._extract_length_from_rule(rule)
             # print(f"DEBUG: Extracted max_length for price: {max_length}")
             if max_length:
-                validation_condition = self.dialect.generate_custom_validation_condition(
-                    "string_length", column, max_length=max_length
+                validation_condition = (
+                    self.dialect.generate_custom_validation_condition(
+                        "string_length", column, max_length=max_length
+                    )
                 )
                 # print(f"DEBUG: Generated string length validation: {validation_condition}")
 
-        elif 'regex' in rule_name and 'price' in rule_name:
+        elif "regex" in rule_name and "price" in rule_name:
             # float(precision, scale) 类型验证 - 从description中提取precision和scale
             if "precision/scale validation" in description:
-                precision, scale = self._extract_float_precision_scale_from_description(description)
+                precision, scale = self._extract_float_precision_scale_from_description(
+                    description
+                )
                 if precision is not None and scale is not None:
-                    validation_condition = self.dialect.generate_custom_validation_condition(
-                        "float_precision", column, precision=precision, scale=scale
+                    validation_condition = (
+                        self.dialect.generate_custom_validation_condition(
+                            "float_precision", column, precision=precision, scale=scale
+                        )
                     )
 
-        elif 'regex' in rule_name and 'total_amount' in rule_name:
+        elif "regex" in rule_name and "total_amount" in rule_name:
             # integer(2) 类型验证 - 从pattern中确定是否为整数位数验证
-            pattern = params.get('pattern', '')
+            pattern = params.get("pattern", "")
             # print(f"DEBUG: Pattern for total_amount: {pattern}")
-            if '\\\.0\*' in pattern or '\\.0*' in pattern:
+            if "\\\.0\*" in pattern or "\\.0*" in pattern:
                 # 这是float到integer的验证，但我们需要从desired_type中获取位数限制
                 # total_amount: "desired_type": "integer(2)" 应该限制为2位数
                 # 对于这种模式，我们应该直接使用2位数的验证
-                validation_condition = self.dialect.generate_custom_validation_condition(
-                    "integer_digits", column, max_digits=2
+                validation_condition = (
+                    self.dialect.generate_custom_validation_condition(
+                        "integer_digits", column, max_digits=2
+                    )
                 )
                 # print(f"DEBUG: Using integer(2) validation for float-to-integer conversion")
             else:
@@ -765,8 +780,10 @@ class ValidityExecutor(BaseExecutor):
                 max_digits = self._extract_digits_from_rule(rule)
                 # print(f"DEBUG: Extracted max_digits for total_amount: {max_digits}")
                 if max_digits:
-                    validation_condition = self.dialect.generate_custom_validation_condition(
-                        "integer_digits", column, max_digits=max_digits
+                    validation_condition = (
+                        self.dialect.generate_custom_validation_condition(
+                            "integer_digits", column, max_digits=max_digits
+                        )
                     )
                     # print(f"DEBUG: Generated integer digits validation: {validation_condition}")
 
@@ -778,13 +795,17 @@ class ValidityExecutor(BaseExecutor):
                 # print(f"DEBUG: Using basic integer format validation")
                 pass
 
-            elif "integer" in description and any(word in description for word in ["precision", "digits"]):
+            elif "integer" in description and any(
+                word in description for word in ["precision", "digits"]
+            ):
                 # 整数位数验证 - 从rule的其他地方获取位数信息
                 max_digits = self._extract_digits_from_rule(rule)
                 # print(f"DEBUG: Extracted max_digits: {max_digits}")
                 if max_digits:
-                    validation_condition = self.dialect.generate_custom_validation_condition(
-                        "integer_digits", column, max_digits=max_digits
+                    validation_condition = (
+                        self.dialect.generate_custom_validation_condition(
+                            "integer_digits", column, max_digits=max_digits
+                        )
                     )
                     # print(f"DEBUG: Generated integer digits validation: {validation_condition}")
 
@@ -798,8 +819,10 @@ class ValidityExecutor(BaseExecutor):
                 max_length = self._extract_length_from_rule(rule)
                 # print(f"DEBUG: Extracted max_length: {max_length}")
                 if max_length:
-                    validation_condition = self.dialect.generate_custom_validation_condition(
-                        "string_length", column, max_length=max_length
+                    validation_condition = (
+                        self.dialect.generate_custom_validation_condition(
+                            "string_length", column, max_length=max_length
+                        )
                     )
                     # print(f"DEBUG: Generated string length validation: {validation_condition}")
 
@@ -821,57 +844,64 @@ class ValidityExecutor(BaseExecutor):
     def _extract_digits_from_rule(self, rule: RuleSchema) -> Optional[int]:
         """从规则中提取数字位数信息"""
         # 首先尝试从参数中提取
-        params = getattr(rule, 'parameters', {})
-        if 'max_digits' in params:
-            return params['max_digits']
+        params = getattr(rule, "parameters", {})
+        if "max_digits" in params:
+            return params["max_digits"]
 
         # 尝试从pattern参数中提取（适用于REGEX规则）
-        if 'pattern' in params:
-            pattern = params['pattern']
+        if "pattern" in params:
+            pattern = params["pattern"]
             # 查找类似 '^-?\\d{1,5}$' 或 '^-?[0-9]{1,2}$' 的模式中的数字
             import re
+
             # 匹配 \d{1,数字} 格式
-            match = re.search(r'\\d\{1,(\d+)\}', pattern)
+            match = re.search(r"\\d\{1,(\d+)\}", pattern)
             if match:
                 return int(match.group(1))
             # 匹配 [0-9]{1,数字} 格式
-            match = re.search(r'\[0-9\]\{1,(\d+)\}', pattern)
+            match = re.search(r"\[0-9\]\{1,(\d+)\}", pattern)
             if match:
                 return int(match.group(1))
 
         # 尝试从规则名称中提取
-        if hasattr(rule, 'name') and rule.name:
+        if hasattr(rule, "name") and rule.name:
             # 查找类似 "integer(5)" 或 "integer_digits_5" 的模式
             import re
-            match = re.search(r'integer.*?(\d+)', rule.name)
+
+            match = re.search(r"integer.*?(\d+)", rule.name)
             if match:
                 return int(match.group(1))
 
         # 尝试从描述中提取
-        description = params.get('description', '')
+        description = params.get("description", "")
         if description:
             import re
+
             # 查找类似 "max 5 digits" 或 "validation for max 5 integer digits" 的模式
-            match = re.search(r'max (\d+).*?digit', description)
+            match = re.search(r"max (\d+).*?digit", description)
             if match:
                 return int(match.group(1))
 
         return None
 
-    def _extract_float_precision_scale_from_description(self, description: str) -> tuple[Optional[int], Optional[int]]:
+    def _extract_float_precision_scale_from_description(
+        self, description: str
+    ) -> tuple[Optional[int], Optional[int]]:
         """从描述中提取float的precision和scale信息"""
         import re
 
         # 查找类似 "Float precision/scale validation for (4,1)" 的模式
-        match = re.search(r'validation for \((\d+),(\d+)\)', description)
+        match = re.search(r"validation for \((\d+),(\d+)\)", description)
         if match:
             precision = int(match.group(1))
             scale = int(match.group(2))
             return precision, scale
 
         # 查找类似 "precision=4, scale=1" 的模式
-        precision_match = re.search(r'precision[=:]?\s*(\d+)', description, re.IGNORECASE)
-        scale_match = re.search(r'scale[=:]?\s*(\d+)', description, re.IGNORECASE)
+        precision_match = re.search(
+            r"precision[=:]?\s*(\d+)", description, re.IGNORECASE
+        )
+        scale_match = re.search(r"scale[=:]?\s*(\d+)", description, re.IGNORECASE)
 
         precision = int(precision_match.group(1)) if precision_match else None
         scale = int(scale_match.group(1)) if scale_match else None
@@ -881,52 +911,59 @@ class ValidityExecutor(BaseExecutor):
     def _extract_length_from_rule(self, rule: RuleSchema) -> Optional[int]:
         """从规则中提取字符串长度信息"""
         # 首先尝试从参数中提取
-        params = getattr(rule, 'parameters', {})
-        if 'max_length' in params:
-            return params['max_length']
+        params = getattr(rule, "parameters", {})
+        if "max_length" in params:
+            return params["max_length"]
 
         # 尝试从pattern参数中提取（适用于REGEX规则）
-        if 'pattern' in params:
-            pattern = params['pattern']
+        if "pattern" in params:
+            pattern = params["pattern"]
             # 查找类似 '^.{0,10}$' 的模式中的数字
             import re
-            match = re.search(r'\{0,(\d+)\}', pattern)
+
+            match = re.search(r"\{0,(\d+)\}", pattern)
             if match:
                 return int(match.group(1))
 
         # 尝试从规则名称中提取
-        if hasattr(rule, 'name') and rule.name:
+        if hasattr(rule, "name") and rule.name:
             # 查找类似 "string(10)" 或 "length_10" 的模式
             import re
-            match = re.search(r'(?:string|length).*?(\d+)', rule.name)
+
+            match = re.search(r"(?:string|length).*?(\d+)", rule.name)
             if match:
                 return int(match.group(1))
 
         # 尝试从描述中提取
-        description = params.get('description', '')
+        description = params.get("description", "")
         if description:
             import re
+
             # 查找类似 "max 10 characters" 或 "length validation for max 10" 的模式
-            match = re.search(r'max (\d+).*?character', description)
+            match = re.search(r"max (\d+).*?character", description)
             if match:
                 return int(match.group(1))
 
         return None
 
-    def _extract_float_precision_scale_from_description(self, description: str) -> tuple[Optional[int], Optional[int]]:
+    def _extract_float_precision_scale_from_description(
+        self, description: str
+    ) -> tuple[Optional[int], Optional[int]]:
         """从描述中提取float的precision和scale信息"""
         import re
 
         # 查找类似 "Float precision/scale validation for (4,1)" 的模式
-        match = re.search(r'validation for \((\d+),(\d+)\)', description)
+        match = re.search(r"validation for \((\d+),(\d+)\)", description)
         if match:
             precision = int(match.group(1))
             scale = int(match.group(2))
             return precision, scale
 
         # 查找类似 "precision=4, scale=1" 的模式
-        precision_match = re.search(r'precision[=:]?\s*(\d+)', description, re.IGNORECASE)
-        scale_match = re.search(r'scale[=:]?\s*(\d+)', description, re.IGNORECASE)
+        precision_match = re.search(
+            r"precision[=:]?\s*(\d+)", description, re.IGNORECASE
+        )
+        scale_match = re.search(r"scale[=:]?\s*(\d+)", description, re.IGNORECASE)
 
         precision = int(precision_match.group(1)) if precision_match else None
         scale = int(scale_match.group(1)) if scale_match else None

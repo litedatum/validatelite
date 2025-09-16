@@ -53,9 +53,9 @@ def _register_sqlite_functions(dbapi_connection, connection_record):
     在每次SQLite连接建立时自动调用，注册用于数值精度验证的自定义函数
     """
     from shared.database.sqlite_functions import (
+        detect_invalid_float_precision,
         detect_invalid_integer_digits,
         detect_invalid_string_length,
-        detect_invalid_float_precision
     )
 
     try:

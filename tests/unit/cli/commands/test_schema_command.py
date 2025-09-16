@@ -264,17 +264,21 @@ class TestSchemaCommandValidation:
     def test_desired_type_validation_accepts_valid_format(self, tmp_path: Path) -> None:
         """Test that desired_type field accepts valid type definitions."""
         runner = CliRunner()
-        data_path = self._write_tmp_file(tmp_path, "data.csv", "id,name,amount\n1,test,12.34\n")
-        
+        data_path = self._write_tmp_file(
+            tmp_path, "data.csv", "id,name,amount\n1,test,12.34\n"
+        )
+
         # Test valid desired_type formats
         valid_rules = {
             "rules": [
-                {"field": "id",  "desired_type": "integer"},
+                {"field": "id", "desired_type": "integer"},
                 {"field": "name", "desired_type": "string(50)"},
-                {"field": "amount",  "desired_type": "float(10,2)"},
+                {"field": "amount", "desired_type": "float(10,2)"},
             ]
         }
-        rules_path = self._write_tmp_file(tmp_path, "schema.json", json.dumps(valid_rules))
+        rules_path = self._write_tmp_file(
+            tmp_path, "schema.json", json.dumps(valid_rules)
+        )
 
         result = runner.invoke(
             cli_app, ["schema", "--conn", data_path, "--rules", rules_path]
@@ -287,18 +291,22 @@ class TestSchemaCommandValidation:
         # Should not have validation errors from desired_type parsing
         assert result.exit_code == 0
 
-    def test_desired_type_validation_rejects_invalid_format(self, tmp_path: Path) -> None:
+    def test_desired_type_validation_rejects_invalid_format(
+        self, tmp_path: Path
+    ) -> None:
         """Test that desired_type field rejects invalid type definitions."""
         runner = CliRunner()
         data_path = self._write_tmp_file(tmp_path, "data.csv", "id\n1\n")
-        
+
         # Test invalid desired_type format
         invalid_rules = {
             "rules": [
                 {"field": "id", "type": "string", "desired_type": "invalid_type"},
             ]
         }
-        rules_path = self._write_tmp_file(tmp_path, "schema.json", json.dumps(invalid_rules))
+        rules_path = self._write_tmp_file(
+            tmp_path, "schema.json", json.dumps(invalid_rules)
+        )
 
         result = runner.invoke(
             cli_app, ["schema", "--conn", data_path, "--rules", rules_path]

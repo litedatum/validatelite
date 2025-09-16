@@ -63,7 +63,7 @@ def validate_string_length(value: Any, max_length: int) -> bool:
     try:
         str_val = str(value)
         return len(str_val) <= max_length
-    except:
+    except Exception:
         return False
 
 
@@ -92,35 +92,38 @@ def validate_float_precision(value: Any, precision: int, scale: int) -> bool:
         val_str = str(float_val)
 
         # 去掉负号
-        if val_str.startswith('-'):
+        if val_str.startswith("-"):
             val_str = val_str[1:]
 
-        if '.' in val_str:
+        if "." in val_str:
             # 有小数点的情况
-            integer_part, decimal_part = val_str.split('.')
+            integer_part, decimal_part = val_str.split(".")
 
             # 去掉尾部的0
-            decimal_part = decimal_part.rstrip('0')
+            decimal_part = decimal_part.rstrip("0")
 
             # 特殊处理：当precision == scale时，意味着只有小数部分，整数部分必须为0
             if precision == scale:
                 # 只允许0.xxxx格式，整数部分必须为0且不计入精度
-                if integer_part != '0':
+                if integer_part != "0":
                     return False
                 int_digits = 0  # 整数部分的0不计入精度
             else:
                 # 正常情况：整数部分计入精度
-                int_digits = len(integer_part) if integer_part != '0' else 1
+                int_digits = len(integer_part) if integer_part != "0" else 1
 
             dec_digits = len(decimal_part)
 
-            # 检查总精度和小数位数
-            total_digits = int_digits + dec_digits
-            return total_digits <= precision and dec_digits <= scale
+            # 检查整数位数和小数位数约束
+            # 整数位数不能超过 (precision - scale)，小数位数不能超过 scale
+            max_integer_digits = precision - scale
+            return int_digits <= max_integer_digits and dec_digits <= scale
         else:
             # 整数情况
-            int_digits = len(val_str) if val_str != '0' else 1
-            return int_digits <= precision
+            int_digits = len(val_str) if val_str != "0" else 1
+            # 整数也要遵守precision-scale约束
+            max_integer_digits = precision - scale
+            return int_digits <= max_integer_digits
 
     except (ValueError, TypeError, OverflowError):
         return False
@@ -142,8 +145,8 @@ def validate_integer_range_by_digits(value: Any, max_digits: int) -> bool:
 
     try:
         int_val = int(float(value))
-        max_val = 10 ** max_digits - 1  # 例如：5位数的最大值是99999
-        min_val = -(10 ** max_digits - 1)  # 例如：5位数的最小值是-99999
+        max_val = 10**max_digits - 1  # 例如：5位数的最大值是99999
+        min_val = -(10**max_digits - 1)  # 例如：5位数的最小值是-99999
         return min_val <= int_val <= max_val
     except (ValueError, TypeError, OverflowError):
         return False
