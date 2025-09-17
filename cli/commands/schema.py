@@ -335,7 +335,8 @@ class CompatibilityAnalyzer:
                     integer_digits = desired_precision - desired_scale
 
                     if integer_digits > 0:
-                        # Override compatibility status for cross-type precision constraints
+                        # Override compatibility status for cross-type precision
+                        # constraints
                         pattern = self.dialect.generate_integer_regex_pattern(
                             integer_digits
                         )
@@ -364,7 +365,8 @@ class CompatibilityAnalyzer:
                 desired_parsed = TypeParser.parse_type_definition(str(desired_type))
                 desired_max_length = desired_parsed.get("max_length")
 
-                # If desired STRING type has length constraint, need validation for cross-type conversions
+                # If desired STRING type has length constraint, need validation for
+                # cross-type conversions
                 if desired_max_length is not None and native_canonical != "STRING":
                     # Override compatibility status for cross-type length constraints
                     result.compatibility = "INCOMPATIBLE"
@@ -460,6 +462,26 @@ class CompatibilityAnalyzer:
 
         elif native == "FLOAT" and desired == "INTEGER":
             # Float to integer needs validation that it's actually an integer value
+            # Check if there are precision constraints (e.g., integer(2))
+            if desired_type_definition:
+                try:
+                    from shared.utils.type_parser import TypeParser
+
+                    parsed = TypeParser.parse_type_definition(desired_type_definition)
+                    max_digits = parsed.get("max_digits")
+
+                    if max_digits is not None:
+                        # Generate pattern that checks both integer-like and digit limit
+                        pattern = f"^-?[0-9]{{1,{max_digits}}}\\.0*$"
+                        return "REGEX", {
+                            "pattern": pattern,
+                            "description": f"Integer-like float validation with max "
+                            f"{max_digits} digits",
+                        }
+                except Exception:
+                    pass  # Fall back to basic validation if parsing fails
+
+            # Default: basic integer-like float validation
             pattern = self.dialect.generate_integer_like_float_pattern()
             return "REGEX", {
                 "pattern": pattern,
@@ -467,7 +489,8 @@ class CompatibilityAnalyzer:
             }
 
         # Note: PRECISION validation types are handled by generating REGEX patterns
-        # This is called from compatibility analysis when precision/scale constraints are detected
+        # This is called from compatibility analysis when precision/scale
+        # constraints are detected
 
         # Default: no specific validation requirements determined
         return None, None
@@ -475,9 +498,9 @@ class CompatibilityAnalyzer:
 
 class DesiredTypeRuleGenerator:
     """
-    Generates validation rules for incompatible type conversions based on compatibility analysis.
+    Generates validation rules for incompatible type conversions based on analysis.
 
-    Transforms compatibility analysis results into concrete RuleSchema objects that can be
+    Transforms analysis results into concrete RuleSchema objects that can be
     executed by the core validation engine.
     """
 
@@ -558,7 +581,8 @@ class DesiredTypeRuleGenerator:
                     generated_rules.append(rule)
 
         logger.debug(
-            f"Generated {len(generated_rules)} desired_type validation rules for table {table_name}"
+            f"Generated {len(generated_rules)} desired_type validation rules "
+            f"for table {table_name}"
         )
         return generated_rules
 
@@ -605,7 +629,10 @@ class DesiredTypeRuleGenerator:
                     "description", "format validation"
                 ),
             },
-            description=f"Desired type validation: {validation_params.get('description', 'format validation')}",
+            description=(
+                f"Desired type validation: "
+                f"{validation_params.get('description', 'format validation')}"
+            ),
         )
 
     @classmethod
@@ -858,7 +885,8 @@ def _validate_single_rule_item(item: Dict[str, Any], context: str) -> None:
         except TypeParseError as e:
             allowed = ", ".join(sorted(_ALLOWED_TYPE_NAMES))
             raise click.UsageError(
-                f"{context}.desired_type '{desired_type}' is not supported. Error: {str(e)}. "
+                f"{context}.desired_type '{desired_type}' is not supported. "
+                f"Error: {str(e)}. "
                 f"Supported formats: {allowed} or syntactic sugar like string(50), "
                 "float(12,2), datetime('format')"
             )
@@ -1100,7 +1128,8 @@ def _decompose_single_table_schema(
 
                     except TypeParseError as dt_e:
                         raise click.UsageError(
-                            f"Invalid desired_type definition for field '{field_name}': {str(dt_e)}"
+                            f"Invalid desired_type definition for field '{field_name}'"
+                            f": {str(dt_e)}"
                         )
 
             except TypeParseError as e:
@@ -1735,13 +1764,15 @@ class DesiredTypePhaseExecutor:
             field_key = f"{table_name}.{field_name}"
             native_type_info = native_types.get(field_key)
 
-            # If not found, try to find by field name only (handles 'unknown' table name issue)
+            # If not found, try to find by field name only (handles 'unknown' table
+            # name issue)
             if not native_type_info:
                 for key, info in native_types.items():
                     if key.endswith(f".{field_name}"):
                         native_type_info = info
                         logger.debug(
-                            f"Found native type for {field_name} using fuzzy match: {key}"
+                            f"Found native type for {field_name} using fuzzy match: "
+                            f"{key}"
                         )
                         break
 
@@ -1753,10 +1784,12 @@ class DesiredTypePhaseExecutor:
             native_metadata = native_type_info.get("native_metadata", {})
 
             logger.debug(
-                f"Analyzing compatibility for {field_name}: {native_type} -> {original_desired_type}"
+                f"Analyzing compatibility for {field_name}: {native_type} -> "
+                f"{original_desired_type}"
             )
 
-            # Perform compatibility analysis using original desired_type for proper parsing
+            # Perform compatibility analysis using original desired_type for proper
+            # parsing
             compatibility_result = analyzer.analyze(
                 native_type=native_type,
                 desired_type=original_desired_type,  # Use original string for parsing
@@ -1765,13 +1798,17 @@ class DesiredTypePhaseExecutor:
                 native_metadata=native_metadata,
             )
             logger.debug(
-                f"Compatibility result: {compatibility_result.compatibility} - {compatibility_result.reason}"
+                f"Compatibility result: {compatibility_result.compatibility} - "
+                f"{compatibility_result.reason}"
             )
             compatibility_results.append(compatibility_result)
 
             # Handle conflicting conversions immediately
             if compatibility_result.compatibility == "CONFLICTING":
-                error_msg = f"Conflicting type conversion for {table_name}.{field_name}: {compatibility_result.reason}"
+                error_msg = (
+                    f"Conflicting type conversion for {table_name}.{field_name}: "
+                    f"{compatibility_result.reason}"
+                )
                 logger.error(error_msg)
                 raise click.UsageError(error_msg)
 
@@ -1826,7 +1863,8 @@ class DesiredTypePhaseExecutor:
         )
         for rule in generated_rules:
             logger.debug(
-                f"Generated rule: {rule.name}, Type: {rule.type}, Target: {rule.get_target_info()}"
+                f"Generated rule: {rule.name}, Type: {rule.type}, Target: "
+                f"{rule.get_target_info()}"
             )
 
         # Execute generated rules if any
@@ -1860,7 +1898,8 @@ class DesiredTypePhaseExecutor:
                 cli_config=self.cli_config,
             )
 
-            # Execute validation directly without _run_validation to avoid asyncio.run() conflicts
+            # Execute validation directly without _run_validation to avoid
+            # asyncio.run() conflicts
             start = _now()
             logger.debug("Starting desired_type validation")
             try:
@@ -1992,12 +2031,13 @@ class DesiredTypePhaseExecutor:
                             desired_type_definitions[field_name] = {
                                 "table": table_name,
                                 "desired_type": canonical_desired_type,
-                                "original_desired_type": desired_type,  # Save original string
+                                "original_desired_type": desired_type,
                                 "metadata": desired_metadata,
                             }
                         except TypeParseError as e:
                             logger.warning(
-                                f"Failed to parse desired_type '{desired_type}' for field '{field_name}': {e}"
+                                f"Failed to parse desired_type '{desired_type}' for "
+                                f"field '{field_name}': {e}"
                             )
 
         else:
@@ -2029,16 +2069,18 @@ class DesiredTypePhaseExecutor:
                         desired_type_definitions[field_name] = {
                             "table": table_name,
                             "desired_type": canonical_desired_type,
-                            "original_desired_type": desired_type,  # Save original string
+                            "original_desired_type": desired_type,
                             "metadata": desired_metadata,
                         }
                     except TypeParseError as e:
                         logger.warning(
-                            f"Failed to parse desired_type '{desired_type}' for field '{field_name}': {e}"
+                            f"Failed to parse desired_type '{desired_type}' "
+                            f"for field '{field_name}': {e}"
                         )
 
         logger.debug(
-            f"Extracted desired_type definitions for {len(desired_type_definitions)} fields"
+            "Extracted desired_type definitions for "
+            f"{len(desired_type_definitions)} fields"
         )
         return desired_type_definitions
 
@@ -2098,7 +2140,8 @@ class DesiredTypePhaseExecutor:
             cli_config=self.cli_config,
         )
 
-        # Execute validation directly without _run_validation to avoid asyncio.run() conflicts
+        # Execute validation directly without _run_validation to avoid
+        # asyncio.run() conflicts
         start = _now()
         logger.debug("Starting additional rules validation")
         try:
@@ -2629,7 +2672,8 @@ def schema_command(
                 skip_map=skip_map,
             )
 
-            # Execute remaining additional rules (non-desired_type rules) with skip semantics
+            # Execute remaining additional rules (non-desired_type rules) with skip
+            # semantics
             additional_results_list = []
             additional_exec_seconds = 0.0
 

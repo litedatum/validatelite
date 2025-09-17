@@ -326,7 +326,7 @@ def normalize_type(type_def: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def parse_desired_type_for_core(
-    desired_type_def: Union[str, Dict[str, Any]]
+    desired_type_def: Union[str, Dict[str, Any]],
 ) -> Dict[str, Any]:
     """
     Convenience function to parse desired_type with proper core layer

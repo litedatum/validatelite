@@ -372,7 +372,8 @@ async def close_all_engines() -> None:
                 except RuntimeError as re:
                     if "Event loop is closed" in str(re):
                         logger.debug(
-                            f"Event loop closed during disposal of engine for URL {url}, skipping"
+                            f"Event loop closed during disposal of engine for "
+                            f"URL {url}, skipping"
                         )
                     else:
                         logger.error(

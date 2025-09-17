@@ -111,15 +111,15 @@ class DatabaseDialect(ABC):
 
     @abstractmethod
     def generate_integer_like_float_pattern(self) -> str:
-        """Generate database-specific regex pattern for integer-like float validation (e.g. 123.0, -45.000)"""
+        """Generate regex pattern for integer-like float validation"""
         pass
 
     def cast_column_for_regex(self, column: str) -> str:
-        """Cast column to appropriate type for regex operations. Override in dialect if needed."""
+        """Cast column to appropriate type for regex operations. Override if needed."""
         return column  # Most databases don't need casting
 
     def supports_regex(self) -> bool:
-        """Check if database supports regex operations. Override in dialect if needed."""
+        """Check if database supports regex operations. Override if needed."""
         return True  # Most databases support regex
 
     @abstractmethod
@@ -617,7 +617,7 @@ class PostgreSQLDialect(DatabaseDialect):
         return "^-?\\d+(\\.\\d+)?$"
 
     def generate_integer_like_float_pattern(self) -> str:
-        """Generate PostgreSQL-specific regex pattern for integer-like float validation"""
+        """Generate PostgreSQL regex pattern for integer-like float validation"""
         return "^-?\\d+\\.0*$"
 
     def cast_column_for_regex(self, column: str) -> str:
@@ -798,7 +798,7 @@ class SQLiteDialect(DatabaseDialect):
         return "^-?\\d+\\.0*$"
 
     def build_full_table_name(self, database: str, table: str) -> str:
-        """Build full table name - SQLite does not use database prefix for table names"""
+        """Build full table name - SQLite does not use database prefix"""
         return self.quote_identifier(table)
 
     def supports_regex(self) -> bool:

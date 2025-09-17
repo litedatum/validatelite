@@ -4,7 +4,6 @@ SQLite自定义验证函数
 为SQLite提供数值精度验证功能，替代REGEX验证
 """
 
-import re
 from typing import Any
 
 

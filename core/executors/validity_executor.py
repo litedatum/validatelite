@@ -573,7 +573,8 @@ class ValidityExecutor(BaseExecutor):
         escaped_pattern = pattern.replace("'", "''")
         regex_op = self.dialect.get_not_regex_operator()
 
-        # Cast column for regex operations if needed (PostgreSQL requires casting for non-text columns)
+        # Cast column for regex operations if needed (PostgreSQL requires casting
+        # for non-text columns)
         regex_column = self.dialect.cast_column_for_regex(column)
 
         # Generate REGEXP expression using the dialect
@@ -739,7 +740,6 @@ class ValidityExecutor(BaseExecutor):
                         "integer_digits", column, max_digits=max_digits
                     )
                 )
-                # print(f"DEBUG: Generated integer digits validation: {validation_condition}")
 
         elif "length" in rule_name and "price" in rule_name:
             # string(3) 类型验证 - 从pattern提取
@@ -751,7 +751,6 @@ class ValidityExecutor(BaseExecutor):
                         "string_length", column, max_length=max_length
                     )
                 )
-                # print(f"DEBUG: Generated string length validation: {validation_condition}")
 
         elif "regex" in rule_name and "price" in rule_name:
             # float(precision, scale) 类型验证 - 从description中提取precision和scale
@@ -770,7 +769,7 @@ class ValidityExecutor(BaseExecutor):
             # integer(2) 类型验证 - 从pattern中确定是否为整数位数验证
             pattern = params.get("pattern", "")
             # print(f"DEBUG: Pattern for total_amount: {pattern}")
-            if "\\\.0\*" in pattern or "\\.0*" in pattern:
+            if r"\\\.0\*" in pattern or r"\\.0*" in pattern:
                 # 这是float到integer的验证，但我们需要从desired_type中获取位数限制
                 # total_amount: "desired_type": "integer(2)" 应该限制为2位数
                 # 对于这种模式，我们应该直接使用2位数的验证
@@ -779,7 +778,6 @@ class ValidityExecutor(BaseExecutor):
                         "integer_digits", column, max_digits=2
                     )
                 )
-                # print(f"DEBUG: Using integer(2) validation for float-to-integer conversion")
             else:
                 # 尝试提取位数
                 max_digits = self._extract_digits_from_rule(rule)
@@ -790,13 +788,15 @@ class ValidityExecutor(BaseExecutor):
                             "integer_digits", column, max_digits=max_digits
                         )
                     )
-                    # print(f"DEBUG: Generated integer digits validation: {validation_condition}")
 
         # 通用的基于描述的判断（后备方案）
         if not validation_condition:
             if "integer" in description and "format validation" in description:
                 # 基本整数格式验证 - 检查是否为整数
-                validation_condition = f"typeof({column}) NOT IN ('integer', 'real') OR {column} != CAST({column} AS INTEGER)"
+                validation_condition = (
+                    f"typeof({column}) NOT IN ('integer', 'real') OR "
+                    f"{column} != CAST({column} AS INTEGER)"
+                )
                 # print(f"DEBUG: Using basic integer format validation")
                 pass
 
@@ -812,7 +812,6 @@ class ValidityExecutor(BaseExecutor):
                             "integer_digits", column, max_digits=max_digits
                         )
                     )
-                    # print(f"DEBUG: Generated integer digits validation: {validation_condition}")
 
             elif "float" in description:
                 # 浮点数验证 - 基本格式检查
@@ -829,7 +828,6 @@ class ValidityExecutor(BaseExecutor):
                             "string_length", column, max_length=max_length
                         )
                     )
-                    # print(f"DEBUG: Generated string length validation: {validation_condition}")
 
         # 如果无法确定验证类型，使用基本的类型检查
         if not validation_condition:

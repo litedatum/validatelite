@@ -236,21 +236,27 @@ class ValidationRuleMerger(BaseRuleMerger):
                     # Use native REGEXP operations for databases that support them
                     escaped_pattern = pattern.replace("'", "''")  # Escape single quotes
                     regex_op = self.dialect.get_not_regex_operator()
-                    # Cast column for regex operations if needed (PostgreSQL requires casting for non-text columns)
+                    # Cast column for regex operations if needed (PostgreSQL requires
+                    # casting for non-text columns)
                     regex_column = self.dialect.cast_column_for_regex(column)
-                    case_clause = f"CASE WHEN {regex_column} {regex_op} '{escaped_pattern}' THEN 1 END"
+                    case_clause = (
+                        f"CASE WHEN {regex_column} {regex_op} '{escaped_pattern}' "
+                        "THEN 1 END"
+                    )
                 elif (
                     hasattr(self.dialect, "can_use_custom_functions")
                     and self.dialect.can_use_custom_functions()
                 ):
-                    # For SQLite, try to generate custom function calls based on pattern analysis
+                    # For SQLite, try to generate custom function calls based on pattern
+                    # analysis
                     case_clause = self._generate_sqlite_custom_case_clause(
                         rule, column, pattern
                     )
                 else:
                     # Fallback: this should not happen, but just in case
                     raise RuleExecutionError(
-                        f"REGEX rule not supported for {self.dialect.__class__.__name__} in merged execution"
+                        f"REGEX rule not supported for "
+                        f"{self.dialect.__class__.__name__} in merged execution"
                     )
             else:
                 case_clause = "CASE WHEN 1=0 THEN 1 END"
@@ -313,7 +319,10 @@ class ValidationRuleMerger(BaseRuleMerger):
             # string(N) validation - extract N
             try:
                 max_length = int(pattern[5:-2])  # Extract number from ^.{0,N}$
-                return f"CASE WHEN DETECT_INVALID_STRING_LENGTH({column}, {max_length}) THEN 1 END"
+                return (
+                    f"CASE WHEN DETECT_INVALID_STRING_LENGTH({column}, "
+                    f"{max_length}) THEN 1 END"
+                )
             except ValueError:
                 pass
         elif pattern == "^-?[0-9]{1,2}$":
@@ -323,7 +332,10 @@ class ValidationRuleMerger(BaseRuleMerger):
             # integer(N) validation - extract N
             try:
                 max_digits = int(pattern[11:-2])  # Extract number from ^-?[0-9]{1,N}$
-                return f"CASE WHEN DETECT_INVALID_INTEGER_DIGITS({column}, {max_digits}) THEN 1 END"
+                return (
+                    f"CASE WHEN DETECT_INVALID_INTEGER_DIGITS({column}, "
+                    f"{max_digits}) THEN 1 END"
+                )
             except ValueError:
                 pass
         elif "precision/scale validation" in description:
@@ -332,7 +344,10 @@ class ValidationRuleMerger(BaseRuleMerger):
                 description
             )
             if precision is not None and scale is not None:
-                return f"CASE WHEN DETECT_INVALID_FLOAT_PRECISION({column}, {precision}, {scale}) THEN 1 END"
+                return (
+                    f"CASE WHEN DETECT_INVALID_FLOAT_PRECISION({column}, "
+                    f"{precision}, {scale}) THEN 1 END"
+                )
 
         # Fallback: use basic pattern matching for unknown patterns
         # This is a compromise - the rule will be skipped in merged execution
@@ -341,14 +356,15 @@ class ValidationRuleMerger(BaseRuleMerger):
 
         logger = get_logger(f"{__name__}.ValidationRuleMerger")
         logger.warning(
-            f"Unknown REGEX pattern '{pattern}' for SQLite merged execution, skipping rule {rule.id}"
+            f"Unknown REGEX pattern '{pattern}' for SQLite merged execution, "
+            f"skipping rule {rule.id}"
         )
         return "CASE WHEN 1=0 THEN 1 END"  # Never matches - effectively skips the rule
 
     def _extract_float_precision_scale_from_description(
         self, description: str
     ) -> tuple:
-        """Extract precision and scale from description like 'float(4,1) precision/scale validation'"""
+        """Extract precision and scale from description like 'float(4,1) validation'"""
         import re
 
         # Look for float(precision,scale) pattern in description
@@ -404,7 +420,8 @@ class ValidationRuleMerger(BaseRuleMerger):
 
         # Fallback: log warning and return None
         self.logger.warning(
-            f"Unknown REGEX pattern '{pattern}' for SQLite sample data generation, rule {rule.id}"
+            f"Unknown REGEX pattern '{pattern}' for SQLite sample data "
+            f"generation, rule {rule.id}"
         )
         return None
 
@@ -591,11 +608,12 @@ class ValidationRuleMerger(BaseRuleMerger):
                     # Use native REGEXP operations for databases that support them
                     escaped_pattern = pattern.replace("'", "''")  # Escape single quotes
                     regex_op = self.dialect.get_not_regex_operator()
-                    # Cast column for regex operations if needed (PostgreSQL requires casting for non-text columns)
+                    # Cast column for regex operations if needed (PostgreSQL requires
+                    # casting for non-text columns)
                     regex_column = self.dialect.cast_column_for_regex(column)
                     return (
-                        f"SELECT * FROM {table_name} WHERE {regex_column} {regex_op} "
-                        f"'{escaped_pattern}' LIMIT {max_samples}"
+                        f"SELECT * FROM {table_name} WHERE {regex_column} "
+                        f"{regex_op} '{escaped_pattern}' LIMIT {max_samples}"
                     )
                 elif (
                     hasattr(self.dialect, "can_use_custom_functions")
@@ -606,11 +624,15 @@ class ValidationRuleMerger(BaseRuleMerger):
                         rule, column, pattern
                     )
                     if sqlite_condition:
-                        return f"SELECT * FROM {table_name} WHERE {sqlite_condition} LIMIT {max_samples}"
+                        return (
+                            f"SELECT * FROM {table_name} WHERE {sqlite_condition} "
+                            f"LIMIT {max_samples}"
+                        )
                 else:
                     # Database doesn't support REGEX and no custom functions available
                     self.logger.warning(
-                        f"REGEX sample data generation not supported for {self.dialect.__class__.__name__}"
+                        f"REGEX sample data generation not supported for "
+                        f"{self.dialect.__class__.__name__}"
                     )
                     return None
 
