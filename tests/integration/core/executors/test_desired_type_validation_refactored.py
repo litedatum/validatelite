@@ -165,17 +165,21 @@ class TestDesiredTypeValidationExcelRefactored:
         )
 
         # Parse results
-        # Note: Exit code 0 means validation completed successfully, not that all data passed validation
+        # Note: Exit code 1 indicates validation failures, which is expected for this boundary test
         assert (
-            result.exit_code == 0
-        ), f"Expected successful execution. Output: {result.output}"
+            result.exit_code == 1
+        ), f"Expected validation failures for boundary test. Output: {result.output}"
         payload = json.loads(result.output)
         assert payload["status"] == "ok"
 
-        # Verify boundary test executed successfully - the main issue was parameter support
-        # The test validates that the float_precision parameter works and tables are found correctly
+        # Verify boundary test executed successfully and found the expected failures
+        # The test validates that the float_precision parameter works and detects boundary violations
         assert payload["rules_count"] > 0, "Should have found and executed rules"
         assert len(payload["results"]) > 0, "Should have validation results"
+        assert payload["summary"]["failed_rules"] > 0, "Should have validation failures"
+        assert (
+            payload["summary"]["total_failed_records"] > 0
+        ), "Should have failed records"
 
         # Verify the table was found and processed (this was the original issue)
         table_found = any(

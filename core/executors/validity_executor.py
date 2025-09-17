@@ -6,7 +6,7 @@ Unified handling: RANGE, ENUM, REGEX and similar rules
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from shared.enums.rule_types import RuleType
 from shared.exceptions.exception_system import RuleExecutionError
@@ -701,148 +701,300 @@ class ValidityExecutor(BaseExecutor):
 
     def _generate_sqlite_custom_validation_sql(self, rule: RuleSchema) -> str:
         """
-        为SQLite生成使用自定义函数的验证SQL
+        为SQLite生成使用自定义函数的验证SQL - 重构版本
 
-        根据REGEX规则的描述和参数，判断验证类型并生成相应的自定义函数调用
+        移除硬编码逻辑，基于规则配置动态确定验证类型
         """
-        # Use safe method to get table and column names
         table = self._safe_get_table_name(rule)
         column = self._safe_get_column_name(rule)
         filter_condition = rule.get_filter_condition()
 
-        # 获取规则参数
-        params = rule.parameters if hasattr(rule, "parameters") else {}
-        description = params.get("description", "").lower()
+        # 动态确定验证类型和参数
+        validation_info = self._determine_validation_type_from_rule(rule)
 
-        # 调试信息（可以在需要时启用）
-        # print(f"DEBUG: SQLite custom validation for {column}")
-        # print(f"DEBUG: Rule name: {getattr(rule, 'name', 'N/A')}")
-        # print(f"DEBUG: Rule parameters: {params}")
-        # print(f"DEBUG: Description: {description}")
+        # 根据验证类型生成验证条件
+        validation_condition = self._generate_validation_condition_by_type(
+            validation_info, column
+        )
 
-        # 根据规则名称和pattern判断验证类型并生成相应的条件
-        validation_condition = None
-        rule_name = getattr(rule, "name", "")
+        # 构建WHERE子句
+        where_clause = f"WHERE {validation_condition}"
+        if filter_condition:
+            where_clause += f" AND ({filter_condition})"
+
+        return f"SELECT COUNT(*) AS anomaly_count FROM {table} {where_clause}"
+
+    def _determine_validation_type_from_rule(self, rule: RuleSchema) -> dict:
+        """根据规则配置动态确定验证类型和参数"""
+        params = getattr(rule, "parameters", {})
+        rule_config = rule.get_rule_config()
+
+        # 优先从规则配置中获取验证类型信息
+        validation_info: Dict[str, Any] = {
+            "type": None,
+            "parameters": {},
+        }
+
+        # 1. 检查是否有明确的验证类型配置
+        if "validation_type" in params:
+            validation_info["type"] = params["validation_type"]
+            validation_info["parameters"] = params
+        elif "validation_type" in rule_config:
+            validation_info["type"] = rule_config["validation_type"]
+            validation_info["parameters"] = rule_config
+
+        # 2. 从desired_type字段推断验证类型（这是关键的缺失逻辑）
+        elif "desired_type" in params:
+            validation_info = self._infer_validation_from_desired_type(
+                params["desired_type"]
+            )
+            validation_info["parameters"].update(params)
+        elif "desired_type" in rule_config:
+            validation_info = self._infer_validation_from_desired_type(
+                rule_config["desired_type"]
+            )
+            validation_info["parameters"].update(rule_config)
+
+        # 3. 基于pattern推断验证类型
+        elif "pattern" in params:
+            validation_info = self._infer_validation_from_pattern(params["pattern"])
+            # 如果pattern推断失败，尝试description推断
+            if validation_info["type"] is None and "description" in params:
+                validation_info = self._infer_validation_from_description(
+                    params["description"]
+                )
+            # 合并其他参数
+            validation_info["parameters"].update(params)
+
+        # 4. 基于description推断验证类型
+        elif "description" in params:
+            validation_info = self._infer_validation_from_description(
+                params["description"]
+            )
+            validation_info["parameters"].update(params)
+
+        return validation_info
+
+    def _infer_validation_from_desired_type(self, desired_type: str) -> dict:
+        """从desired_type字段推断验证类型（如: 'integer(2)', 'float(4,1)', 'string(10)'）"""
+        import re
+
+        # 解析integer(N) 格式
+        int_match = re.match(r"integer\((\d+)\)", desired_type)
+        if int_match:
+            max_digits = int(int_match.group(1))
+            return {"type": "integer_digits", "parameters": {"max_digits": max_digits}}
+
+        # 解析float(precision,scale) 格式
+        float_match = re.match(r"float\((\d+),(\d+)\)", desired_type)
+        if float_match:
+            precision = int(float_match.group(1))
+            scale = int(float_match.group(2))
+            return {
+                "type": "float_precision",
+                "parameters": {"precision": precision, "scale": scale},
+            }
+
+        # 解析string(N) 格式
+        string_match = re.match(r"string\((\d+)\)", desired_type)
+        if string_match:
+            max_length = int(string_match.group(1))
+            return {"type": "string_length", "parameters": {"max_length": max_length}}
+
+        # 解析基本类型
+        if desired_type == "integer":
+            return {"type": "integer_format", "parameters": {}}
+        elif desired_type == "float":
+            return {"type": "float_format", "parameters": {}}
+        elif desired_type == "string":
+            return {"type": "string_length", "parameters": {}}
+
+        return {"type": None, "parameters": {}}
+
+    def _infer_validation_from_pattern(self, pattern: str) -> dict:
+        """从正则模式推断验证类型"""
+        import re
+
+        # 整数位数验证：^-?\\d{1,N}$ 或 ^-?[0-9]{1,N}$
+        int_digits_match = re.search(
+            r"\\\\d\\{1,(\\d+)\\}|\\[0-9\\]\\{1,(\\d+)\\}", pattern
+        )
+        if int_digits_match:
+            max_digits = int(int_digits_match.group(1) or int_digits_match.group(2))
+            return {"type": "integer_digits", "parameters": {"max_digits": max_digits}}
+
+        # 字符串长度验证：^.{0,N}$
+        str_length_match = re.search(r"\\.\\{0,(\\d+)\\}", pattern)
+        if str_length_match:
+            max_length = int(str_length_match.group(1))
+            return {"type": "string_length", "parameters": {"max_length": max_length}}
+
+        # 浮点数验证：包含小数点模式
+        if r"\\." in pattern and any(x in pattern for x in [r"\\d", "[0-9]"]):
+            # 检查是否是float到integer的转换（包含.0*模式）
+            if r"\\.0\\*" in pattern or r"\\.0+" in pattern:
+                return {"type": "float_to_integer", "parameters": {}}
+            return {"type": "float_format", "parameters": {}}
+
+        return {"type": None, "parameters": {}}
+
+    def _infer_validation_from_description(self, description: str) -> dict:
+        """从描述推断验证类型"""
+        import re
+
+        description_lower = description.lower()
+
+        # Float precision/scale validation - 修复正则表达式
+        if "precision/scale validation" in description_lower:
+            # 匹配 "Float precision/scale validation for (4,1)" 格式
+            match = re.search(r"validation for \((\d+),(\d+)\)", description)
+            if match:
+                precision = int(match.group(1))
+                scale = int(match.group(2))
+                return {
+                    "type": "float_precision",
+                    "parameters": {"precision": precision, "scale": scale},
+                }
+
+        # Integer format validation
+        if "integer" in description_lower and "format validation" in description_lower:
+            return {"type": "integer_format", "parameters": {}}
+
+        # Integer digits validation
+        if "integer" in description_lower and any(
+            word in description_lower for word in ["precision", "digits"]
+        ):
+            # 尝试提取位数
+            match = re.search(r"max (\d+).*?digit", description_lower)
+            if match:
+                max_digits = int(match.group(1))
+                return {
+                    "type": "integer_digits",
+                    "parameters": {"max_digits": max_digits},
+                }
+            return {"type": "integer_digits", "parameters": {}}
+
+        # Float validation
+        if "float" in description_lower:
+            return {"type": "float_format", "parameters": {}}
+
+        # String length validation
+        if "string" in description_lower or "length" in description_lower:
+            match = re.search(r"max (\d+).*?character", description_lower)
+            if match:
+                max_length = int(match.group(1))
+                return {
+                    "type": "string_length",
+                    "parameters": {"max_length": max_length},
+                }
+            return {"type": "string_length", "parameters": {}}
+
+        return {"type": None, "parameters": {}}
+
+    def _generate_validation_condition_by_type(
+        self, validation_info: dict, column: str
+    ) -> str:
+        """根据验证类型信息生成验证条件"""
+        validation_type = validation_info.get("type")
+        params = validation_info.get("parameters", {})
+
+        if not validation_type:
+            return "1=0"  # 无验证条件
 
         from typing import cast
 
         from shared.database.database_dialect import SQLiteDialect
 
         sqlite_dialect = cast(SQLiteDialect, self.dialect)
-        # 首先检查规则名称包含的信息
-        if "regex" in rule_name and "age" in rule_name:
-            # integer(2) 类型验证 - 从pattern提取
-            max_digits = self._extract_digits_from_rule(rule)
-            # print(f"DEBUG: Extracted max_digits for age: {max_digits}")
+
+        if validation_type == "integer_digits":
+            max_digits = params.get("max_digits")
+            if not max_digits:
+                # 尝试从其他方法提取
+                max_digits = self._extract_digits_from_params(params)
             if max_digits:
-                validation_condition = (
-                    sqlite_dialect.generate_custom_validation_condition(
-                        "integer_digits", column, max_digits=max_digits
-                    )
+                return sqlite_dialect.generate_custom_validation_condition(
+                    "integer_digits", column, max_digits=max_digits
                 )
+            return (
+                f"typeof({column}) NOT IN ('integer', 'real') OR {column} "
+                f"!= CAST({column} AS INTEGER)"
+            )
 
-        elif "length" in rule_name and "price" in rule_name:
-            # string(3) 类型验证 - 从pattern提取
-            max_length = self._extract_length_from_rule(rule)
-            # print(f"DEBUG: Extracted max_length for price: {max_length}")
+        elif validation_type == "string_length":
+            max_length = params.get("max_length")
+            if not max_length:
+                # 尝试从其他方法提取
+                max_length = self._extract_length_from_params(params)
             if max_length:
-                validation_condition = (
-                    sqlite_dialect.generate_custom_validation_condition(
-                        "string_length", column, max_length=max_length
-                    )
+                return sqlite_dialect.generate_custom_validation_condition(
+                    "string_length", column, max_length=max_length
                 )
+            return "1=0"
 
-        elif "regex" in rule_name and "price" in rule_name:
-            # float(precision, scale) 类型验证 - 从description中提取precision和scale
-            if "precision/scale validation" in description:
-                precision, scale = self._extract_float_precision_scale_from_description(
-                    description
+        elif validation_type == "float_precision":
+            precision = params.get("precision")
+            scale = params.get("scale")
+            if precision is not None and scale is not None:
+                return sqlite_dialect.generate_custom_validation_condition(
+                    "float_precision", column, precision=precision, scale=scale
                 )
-                if precision is not None and scale is not None:
-                    validation_condition = (
-                        sqlite_dialect.generate_custom_validation_condition(
-                            "float_precision", column, precision=precision, scale=scale
-                        )
-                    )
+            return f"typeof({column}) NOT IN ('integer', 'real')"
 
-        elif "regex" in rule_name and "total_amount" in rule_name:
-            # integer(2) 类型验证 - 从pattern中确定是否为整数位数验证
-            pattern = params.get("pattern", "")
-            # print(f"DEBUG: Pattern for total_amount: {pattern}")
-            if r"\\\.0\*" in pattern or r"\\.0*" in pattern:
-                # 这是float到integer的验证，但我们需要从desired_type中获取位数限制
-                # total_amount: "desired_type": "integer(2)" 应该限制为2位数
-                # 对于这种模式，我们应该直接使用2位数的验证
-                validation_condition = (
-                    sqlite_dialect.generate_custom_validation_condition(
-                        "integer_digits", column, max_digits=2
-                    )
-                )
-            else:
-                # 尝试提取位数
-                max_digits = self._extract_digits_from_rule(rule)
-                # print(f"DEBUG: Extracted max_digits for total_amount: {max_digits}")
-                if max_digits:
-                    validation_condition = (
-                        sqlite_dialect.generate_custom_validation_condition(
-                            "integer_digits", column, max_digits=max_digits
-                        )
-                    )
+        elif validation_type == "float_format":
+            return f"typeof({column}) NOT IN ('integer', 'real')"
 
-        # 通用的基于描述的判断（后备方案）
-        if not validation_condition:
-            if "integer" in description and "format validation" in description:
-                # 基本整数格式验证 - 检查是否为整数
-                validation_condition = (
-                    f"typeof({column}) NOT IN ('integer', 'real') OR "
-                    f"{column} != CAST({column} AS INTEGER)"
-                )
-                # print(f"DEBUG: Using basic integer format validation")
-                pass
+        elif validation_type == "integer_format":
+            return (
+                f"typeof({column}) NOT IN ('integer', 'real') OR {column} "
+                f"!= CAST({column} AS INTEGER)"
+            )
 
-            elif "integer" in description and any(
-                word in description for word in ["precision", "digits"]
-            ):
-                # 整数位数验证 - 从rule的其他地方获取位数信息
-                max_digits = self._extract_digits_from_rule(rule)
-                # print(f"DEBUG: Extracted max_digits: {max_digits}")
-                if max_digits:
-                    validation_condition = (
-                        sqlite_dialect.generate_custom_validation_condition(
-                            "integer_digits", column, max_digits=max_digits
-                        )
-                    )
+        elif validation_type == "float_to_integer":
+            # 特殊情况：float到integer的验证，检查是否为整数
+            return (
+                f"typeof({column}) NOT IN ('integer', 'real') OR {column} "
+                f"!= CAST({column} AS INTEGER)"
+            )
 
-            elif "float" in description:
-                # 浮点数验证 - 基本格式检查
-                validation_condition = f"typeof({column}) NOT IN ('integer', 'real')"
-                # print(f"DEBUG: Using float format validation")
+        return "1=0"
 
-            elif "string" in description or "length" in description:
-                # 字符串长度验证
-                max_length = self._extract_length_from_rule(rule)
-                # print(f"DEBUG: Extracted max_length: {max_length}")
-                if max_length:
-                    validation_condition = (
-                        sqlite_dialect.generate_custom_validation_condition(
-                            "string_length", column, max_length=max_length
-                        )
-                    )
+    def _extract_digits_from_params(self, params: dict) -> Optional[int]:
+        """从参数中提取数字位数信息"""
+        if "max_digits" in params:
+            return int(params["max_digits"])
 
-        # 如果无法确定验证类型，使用基本的类型检查
-        if not validation_condition:
-            validation_condition = "1=0"  # 永远不匹配，相当于跳过验证
-            # print(f"DEBUG: No validation condition found, using 1=0")
+        # 尝试从pattern参数中提取
+        if "pattern" in params:
+            pattern = params["pattern"]
+            import re
 
-        # Build complete WHERE clause
-        where_clause = f"WHERE {validation_condition}"
+            # 匹配 \\d{1,数字} 格式
+            match = re.search(r"\\\\d\\{1,(\\d+)\\}", pattern)
+            if match:
+                return int(match.group(1))
+            # 匹配 [0-9]{1,数字} 格式
+            match = re.search(r"\\[0-9\\]\\{1,(\\d+)\\}", pattern)
+            if match:
+                return int(match.group(1))
 
-        if filter_condition:
-            where_clause += f" AND ({filter_condition})"
+        return None
 
-        final_sql = f"SELECT COUNT(*) AS anomaly_count FROM {table} {where_clause}"
-        # print(f"DEBUG: Final SQL: {final_sql}")
-        return final_sql
+    def _extract_length_from_params(self, params: dict) -> Optional[int]:
+        """从参数中提取字符串长度信息"""
+        if "max_length" in params:
+            return int(params["max_length"])
+
+        # 尝试从pattern参数中提取
+        if "pattern" in params:
+            pattern = params["pattern"]
+            import re
+
+            match = re.search(r"\\.\\{0,(\\d+)\\}", pattern)
+            if match:
+                return int(match.group(1))
+
+        return None
 
     def _extract_digits_from_rule(self, rule: RuleSchema) -> Optional[int]:
         """从规则中提取数字位数信息"""
