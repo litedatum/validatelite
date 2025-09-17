@@ -1,7 +1,8 @@
 """
-SQLite自定义验证函数
+SQLite Custom Validation Functions
 
-为SQLite提供数值精度验证功能，替代REGEX验证
+Provides numerical precision validation functionality for SQLite,
+ replacing REGEX validation
 """
 
 from typing import Any
@@ -9,55 +10,55 @@ from typing import Any
 
 def validate_integer_digits(value: Any, max_digits: int) -> bool:
     """
-    验证整数位数是否不超过指定位数
+    Validate whether integer digits do not exceed the specified number of digits
 
     Args:
-        value: 待验证的值
-        max_digits: 最大允许位数
+        value: Value to be validated
+        max_digits: Maximum allowed digits
 
     Returns:
-        bool: True表示验证通过，False表示验证失败
+        bool: True indicates validation passed, False indicates validation failed
 
     Examples:
         validate_integer_digits(12345, 5) -> True
-        validate_integer_digits(-23456, 5) -> True (负号不算位数)
+        validate_integer_digits(-23456, 5) -> True (negative sign not counted as digit)
         validate_integer_digits(123456, 5) -> False
         validate_integer_digits("abc", 5) -> False
-        validate_integer_digits(12.34, 5) -> False (有小数部分)
+        validate_integer_digits(12.34, 5) -> False (has decimal part)
     """
     if value is None:
-        return True  # NULL值跳过验证
+        return True  # NULL values skip validation
 
     try:
-        # 尝试转换为浮点数再转换为整数，确保是数值
+        # Try to convert to float then to integer, ensuring it's numerical
         float_val = float(value)
         int_val = int(float_val)
 
-        # 检查是否有小数部分
+        # Check if there's a decimal part
         if float_val != int_val:
-            return False  # 有小数部分，不是整数
+            return False  # Has decimal part, not an integer
 
-        # 计算位数（绝对值，去掉负号）
+        # Calculate digit count (absolute value, remove negative sign)
         digit_count = len(str(abs(int_val)))
         return digit_count <= max_digits
 
     except (ValueError, TypeError, OverflowError):
-        return False  # 非法值返回失败
+        return False  # Invalid values return failure
 
 
 def validate_string_length(value: Any, max_length: int) -> bool:
     """
-    验证字符串长度是否不超过指定长度
+    Validate whether string length does not exceed the specified length
 
     Args:
-        value: 待验证的值
-        max_length: 最大允许长度
+        value: Value to be validated
+        max_length: Maximum allowed length
 
     Returns:
-        bool: True表示验证通过，False表示验证失败
+        bool: True indicates validation passed, False indicates validation failed
     """
     if value is None:
-        return True  # NULL值跳过验证
+        return True  # NULL values skip validation
 
     try:
         str_val = str(value)
@@ -68,59 +69,62 @@ def validate_string_length(value: Any, max_length: int) -> bool:
 
 def validate_float_precision(value: Any, precision: int, scale: int) -> bool:
     """
-    验证浮点数精度和小数位数
+    Validate floating point precision and decimal places
 
     Args:
-        value: 待验证的值
-        precision: 总精度（整数位+小数位）
-        scale: 小数位数
+        value: Value to be validated
+        precision: Total precision (integer digits + decimal digits)
+        scale: Number of decimal places
 
     Returns:
-        bool: True表示验证通过，False表示验证失败
+        bool: True indicates validation passed, False indicates validation failed
 
     Examples:
         validate_float_precision(123.45, 5, 2) -> True
-        validate_float_precision(1234.56, 5, 2) -> False (总位数超过5)
-        validate_float_precision(123.456, 5, 2) -> False (小数位超过2)
+        validate_float_precision(1234.56, 5, 2) -> False (total digits exceed 5)
+        validate_float_precision(123.456, 5, 2) -> False (decimal places exceed 2)
     """
     if value is None:
-        return True  # NULL值跳过验证
+        return True  # NULL values skip validation
 
     try:
         float_val = float(value)
         val_str = str(float_val)
 
-        # 去掉负号
+        # Remove negative sign
         if val_str.startswith("-"):
             val_str = val_str[1:]
 
         if "." in val_str:
-            # 有小数点的情况
+            # Case with decimal point
             integer_part, decimal_part = val_str.split(".")
 
-            # 去掉尾部的0
+            # Remove trailing zeros
             decimal_part = decimal_part.rstrip("0")
 
-            # 特殊处理：当precision == scale时，意味着只有小数部分，整数部分必须为0
+            # Special case: when precision == scale, it means only decimal part,
+            #  integer part must be 0
             if precision == scale:
-                # 只允许0.xxxx格式，整数部分必须为0且不计入精度
+                # Only allow 0.xxxx format, integer part must be 0 and not counted
+                #  in precision
                 if integer_part != "0":
                     return False
-                int_digits = 0  # 整数部分的0不计入精度
+                int_digits = 0  # Integer part 0 is not counted in precision
             else:
-                # 正常情况：整数部分计入精度
+                # Normal case: integer part is counted in precision
                 int_digits = len(integer_part) if integer_part != "0" else 1
 
             dec_digits = len(decimal_part)
 
-            # 检查整数位数和小数位数约束
-            # 整数位数不能超过 (precision - scale)，小数位数不能超过 scale
+            # Check integer and decimal digit constraints
+            # Integer digits cannot exceed (precision - scale), decimal digits cannot
+            #  exceed scale
             max_integer_digits = precision - scale
             return int_digits <= max_integer_digits and dec_digits <= scale
         else:
-            # 整数情况
+            # Integer case
             int_digits = len(val_str) if val_str != "0" else 1
-            # 整数也要遵守precision-scale约束
+            # Integers must also follow precision-scale constraints
             max_integer_digits = precision - scale
             return int_digits <= max_integer_digits
 
@@ -130,38 +134,41 @@ def validate_float_precision(value: Any, precision: int, scale: int) -> bool:
 
 def validate_integer_range_by_digits(value: Any, max_digits: int) -> bool:
     """
-    通过范围检查来验证整数位数（备用方案）
+    Validate integer digits through range checking (fallback solution)
 
     Args:
-        value: 待验证的值
-        max_digits: 最大允许位数
+        value: Value to be validated
+        max_digits: Maximum allowed digits
 
     Returns:
-        bool: True表示验证通过，False表示验证失败
+        bool: True indicates validation passed, False indicates validation failed
     """
     if value is None:
         return True
 
     try:
         int_val = int(float(value))
-        max_val: int = 10**max_digits - 1  # 例如：5位数的最大值是99999
-        min_val: int = -(10**max_digits - 1)  # 例如：5位数的最小值是-99999
+        max_val: int = 10**max_digits - 1  # maximum value for 5 digits is 99999
+        min_val: int = -(10**max_digits - 1)  # minimum value for 5 digits is -99999
         return min_val <= int_val <= max_val
     except (ValueError, TypeError, OverflowError):
         return False
 
 
-# 为了方便SQLite注册，提供失败检测版本
+# For SQLite registration convenience, provide failure detection versions
 def detect_invalid_integer_digits(value: Any, max_digits: int) -> bool:
-    """检测不符合整数位数要求的值（用于COUNT失败记录）"""
+    """
+    Detect values that do not meet integer digit requirements
+      (used for COUNT failed records)
+    """
     return not validate_integer_digits(value, max_digits)
 
 
 def detect_invalid_string_length(value: Any, max_length: int) -> bool:
-    """检测不符合字符串长度要求的值"""
+    """Detect values that do not meet string length requirements"""
     return not validate_string_length(value, max_length)
 
 
 def detect_invalid_float_precision(value: Any, precision: int, scale: int) -> bool:
-    """检测不符合浮点数精度要求的值"""
+    """Detect values that do not meet floating point precision requirements"""
     return not validate_float_precision(value, precision, scale)

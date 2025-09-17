@@ -809,15 +809,16 @@ class SQLiteDialect(DatabaseDialect):
         self, validation_type: str, column: str, **params: Any
     ) -> str:
         """
-        生成使用SQLite自定义函数的验证条件
+        Generate validation conditions using SQLite custom functions
 
         Args:
-            validation_type: 验证类型 ('integer_digits', 'string_length', 'float_precision')
-            column: 列名
-            **params: 验证参数
+            validation_type: validation type
+              ('integer_digits', 'string_length', 'float_precision')
+            column: column name
+            **params: validation parameters
 
         Returns:
-            SQL条件字符串，用于WHERE子句中检测失败情况
+            SQL condition string for detecting failure cases in WHERE clause
         """
         if validation_type == "integer_digits":
             max_digits = params.get("max_digits", 10)
@@ -838,7 +839,7 @@ class SQLiteDialect(DatabaseDialect):
             )
 
     def can_use_custom_functions(self) -> bool:
-        """SQLite支持自定义函数"""
+        """SQLite supports custom functions"""
         return True
 
 

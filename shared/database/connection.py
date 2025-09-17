@@ -48,9 +48,10 @@ _engine_creation_lock = (
 
 def _register_sqlite_functions(dbapi_connection: Any, connection_record: Any) -> None:
     """
-    注册SQLite自定义验证函数
+    Register SQLite custom validation functions
 
-    在每次SQLite连接建立时自动调用，注册用于数值精度验证的自定义函数
+    Automatically called when each SQLite connection is established, registering
+      custom functions for numeric precision validation
     """
     from shared.database.sqlite_functions import (
         detect_invalid_float_precision,
@@ -59,26 +60,26 @@ def _register_sqlite_functions(dbapi_connection: Any, connection_record: Any) ->
     )
 
     try:
-        # 注册整数位数验证函数
+        # Register integer digits validation function
         dbapi_connection.create_function(
             "DETECT_INVALID_INTEGER_DIGITS", 2, detect_invalid_integer_digits
         )
 
-        # 注册字符串长度验证函数
+        # Register string length validation function
         dbapi_connection.create_function(
             "DETECT_INVALID_STRING_LENGTH", 2, detect_invalid_string_length
         )
 
-        # 注册浮点数精度验证函数
+        # Register floating point precision validation function
         dbapi_connection.create_function(
             "DETECT_INVALID_FLOAT_PRECISION", 3, detect_invalid_float_precision
         )
 
-        logger.debug("SQLite自定义验证函数注册成功")
+        logger.debug("SQLite custom validation functions registered successfully")
 
     except Exception as e:
-        logger.warning(f"SQLite自定义函数注册失败: {e}")
-        # 不抛出异常，允许连接继续建立
+        logger.warning(f"SQLite custom function registration failed: {e}")
+        # Do not throw exception, allow connection to continue establishing
 
 
 def get_db_url(
@@ -245,7 +246,8 @@ async def get_engine(
                     pool_pre_ping=True,  # Enable connection health checks
                 )
 
-                # # 注册事件监听器，在每次连接建立时注册自定义函数
+                # # Register event listener to register custom functions on each
+                #  connection establishment
                 event.listen(engine.sync_engine, "connect", _register_sqlite_functions)
             elif db_url.startswith(ConnectionType.CSV) or db_url.startswith(
                 ConnectionType.EXCEL
@@ -435,7 +437,8 @@ async def retry_connection(
         ) as e:  # Catch SQLAlchemyError and other exceptions from connection
             logger.warning(
                 f"Connection attempt {attempt + 1}/{max_retries} for "
-                f"{db_url[:db_url.find('@') if '@' in db_url else 50]} failed: {str(e)}"
+                f"{db_url[:db_url.find('@') if '@' in db_url else 50]} "
+                f"failed: {str(e)}"
             )
             if attempt < max_retries - 1:
                 await asyncio.sleep(retry_interval * (2**attempt))
