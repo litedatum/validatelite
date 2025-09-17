@@ -343,18 +343,29 @@ class TestEngineManagement:
         with patch(
             "shared.database.connection.create_async_engine", new_callable=MagicMock
         ) as mock_create:
-            mock_create.return_value = AsyncMock(
-                spec=AsyncEngine
-            )  # So it can be disposed
-            await get_engine(dummy_url, echo=True)
-            from sqlalchemy.pool import NullPool
+            # Create a proper mock for the async engine with sync_engine property
+            mock_async_engine = AsyncMock(spec=AsyncEngine)
+            mock_sync_engine = MagicMock()
+            mock_async_engine.sync_engine = mock_sync_engine
 
-            mock_create.assert_called_once_with(
-                dummy_url,
-                echo=True,
-                poolclass=NullPool,
-                pool_pre_ping=True,
-            )
+            mock_create.return_value = mock_async_engine
+
+            # Mock the event.listen function to avoid the actual event registration
+            with patch("shared.database.connection.event.listen") as mock_listen:
+                await get_engine(dummy_url, echo=True)
+                from sqlalchemy.pool import NullPool
+
+                mock_create.assert_called_once_with(
+                    dummy_url,
+                    echo=True,
+                    poolclass=NullPool,
+                    pool_pre_ping=True,
+                )
+
+                # Verify that event.listen was called for SQLite
+                mock_listen.assert_called_once_with(
+                    mock_sync_engine, "connect", mock_listen.call_args[0][2]
+                )
         # _engine_cache will contain the mocked engine, it will be cleaned up.
 
     @pytest.mark.asyncio

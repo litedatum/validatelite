@@ -459,7 +459,7 @@ class TestDialectCommonFunctionality:
 
         # Verifies the inclusion of the database and table names.
         if not isinstance(
-            dialect, PostgreSQLDialect
+            dialect, (PostgreSQLDialect, SQLiteDialect)
         ):  # PostgreSQL does not support database name in table name
             assert "test_db" in full_name
         assert "test_table" in full_name
@@ -470,7 +470,7 @@ class TestDialectCommonFunctionality:
         elif isinstance(dialect, PostgreSQLDialect):
             assert '"test_table"' == full_name
         elif isinstance(dialect, SQLiteDialect):
-            assert '"test_db"."test_table"' == full_name
+            assert '"test_table"' == full_name
         elif isinstance(dialect, SQLServerDialect):
             assert "[test_db].[test_table]" == full_name
 

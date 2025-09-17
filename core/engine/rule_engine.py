@@ -304,7 +304,9 @@ class RuleGroup:
             # Execute merged SQL
             execution_start = time.time()
             async with engine.begin() as conn:
-                result = await conn.execute(text(merge_result.sql), merge_result.params)
+                result: Any = await conn.execute(
+                    text(merge_result.sql), merge_result.params
+                )
                 # Fix SQLAlchemy result row conversion issue - fetchall is not
                 # async
                 rows = result.fetchall()
@@ -452,7 +454,7 @@ class RuleGroup:
                 query = text(f"SELECT COUNT(*) FROM {self.database}.{self.table_name}")
 
             async with engine.begin() as conn:
-                result = await conn.execute(query)
+                result: Any = await conn.execute(query)
                 row = result.fetchone()  # fetchone is not async
                 if row:
                     # Handle possible coroutine object (in test environment)

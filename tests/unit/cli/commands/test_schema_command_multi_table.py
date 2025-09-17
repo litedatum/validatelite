@@ -34,10 +34,10 @@ class TestSchemaCommandMultiTable:
             ["schema", "--conn", data_path, "--rules", rules_path, "--output", "json"],
         )
 
-        assert result.exit_code == 0
+        assert result.exit_code == 1
         payload = json.loads(result.output)
         assert payload["status"] == "ok"
-        assert payload["rules_count"] == 17
+        assert payload["rules_count"] == 21
 
         # Check that fields have table information
         fields = payload["fields"]

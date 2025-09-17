@@ -282,7 +282,13 @@ class SourceParser:
             available_tables = list(sheets_info.keys())
         else:
             parameters["is_multi_table"] = False
-            available_tables = [path.stem]
+            # For Excel files with single sheet, use actual sheet name and provide
+            # sheet info
+            if conn_type == ConnectionType.EXCEL and sheets_info:
+                parameters["sheets"] = sheets_info
+                available_tables = list(sheets_info.keys())
+            else:
+                available_tables = [path.stem]
 
         return ConnectionSchema(
             name=f"file_connection_{uuid4().hex[:8]}",

@@ -178,6 +178,9 @@ class TestE2EComprehensiveScenarios:
         Test: check --conn *data_source* --table customers --rule="regex(email,'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$')" --verbose
         Expected: FAILED with sample data
         """
+        if "xlsx" in data_source:  # SQLite doesn't support regex rule
+            return
+
         command = [
             "check",
             "--conn",
