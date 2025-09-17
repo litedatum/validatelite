@@ -46,7 +46,7 @@ _engine_creation_lock = (
 )  # To prevent race conditions during engine creation
 
 
-def _register_sqlite_functions(dbapi_connection, connection_record):
+def _register_sqlite_functions(dbapi_connection: Any, connection_record: Any) -> None:
     """
     注册SQLite自定义验证函数
 
@@ -245,7 +245,7 @@ async def get_engine(
                     pool_pre_ping=True,  # Enable connection health checks
                 )
 
-                # 注册事件监听器，在每次连接建立时注册自定义函数
+                # # 注册事件监听器，在每次连接建立时注册自定义函数
                 event.listen(engine.sync_engine, "connect", _register_sqlite_functions)
             elif db_url.startswith(ConnectionType.CSV) or db_url.startswith(
                 ConnectionType.EXCEL
@@ -269,11 +269,14 @@ async def get_engine(
                             "server_settings": {
                                 "jit": "off"  # Disable JIT to improve stability
                             },
+                            # Improve connection cleanup behavior
+                            "timeout": 5,  # Connection timeout
                         }
                         if db_url.startswith("postgresql")
                         else {}
                     )
                 )
+
                 engine = create_async_engine(
                     db_url,
                     pool_size=pool_size,
@@ -357,7 +360,7 @@ async def close_all_engines() -> None:
                     )
                     continue
 
-                # Add timeout handling
+                # Add timeout handling with event loop closed detection
                 try:
                     await asyncio.wait_for(engine_instance.dispose(), timeout=30.0)
                     logger.debug(
@@ -366,6 +369,16 @@ async def close_all_engines() -> None:
                     )
                 except asyncio.TimeoutError:
                     logger.error(f"Timeout during disposal of engine for URL {url}")
+                except RuntimeError as re:
+                    if "Event loop is closed" in str(re):
+                        logger.debug(
+                            f"Event loop closed during disposal of engine for URL {url}, skipping"
+                        )
+                    else:
+                        logger.error(
+                            f"Runtime error during engine.dispose() for URL {url}: "
+                            f"{re}"
+                        )
                 except Exception as dispose_error:
                     logger.error(
                         f"Error during engine.dispose() for URL {url}: "

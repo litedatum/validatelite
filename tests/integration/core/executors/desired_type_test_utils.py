@@ -11,7 +11,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 import pandas as pd
 import pytest
@@ -498,12 +498,12 @@ class TestDataBuilder:
 
         if include_additional_constraints:
             # Add regex constraint to email
-            schema["tables"][2]["columns"][3][
+            cast(Dict[str, Any], schema["tables"][2]["columns"][3])[
                 "pattern"
             ] = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
 
             # Add enum constraint to category
-            schema["tables"][0]["columns"][3]["enum"] = [
+            cast(Dict[str, Any], schema["tables"][0]["columns"][3])["enum"] = [
                 "electronics",
                 "books",
                 "clothing",
@@ -511,8 +511,8 @@ class TestDataBuilder:
             ]
 
             # Add range constraint to age
-            schema["tables"][2]["columns"][2]["min"] = 0
-            schema["tables"][2]["columns"][2]["max"] = 150
+            cast(Dict[str, Any], schema["tables"][2]["columns"][2])["min"] = 0
+            cast(Dict[str, Any], schema["tables"][2]["columns"][2])["max"] = 150
 
         return schema
 
@@ -523,8 +523,8 @@ class TestAssertionHelpers:
     @staticmethod
     def assert_validation_results(
         results: List[Dict],
-        expected_failed_tables: List[str] = None,
-        expected_passed_tables: List[str] = None,
+        expected_failed_tables: Optional[List[str]] = None,
+        expected_passed_tables: Optional[List[str]] = None,
         min_total_anomalies: int = 0,
     ) -> None:
         """
@@ -540,7 +540,7 @@ class TestAssertionHelpers:
         assert len(results) > 0, "Results should not be empty"
 
         # Group results by table
-        table_results = {}
+        table_results: dict = {}
         total_anomalies = 0
 
         for result in results:
@@ -630,18 +630,25 @@ class TestAssertionHelpers:
             test_cases: List of (input_args..., expected_result, description) tuples
         """
         try:
+            func: Any = None
             if function_name == "validate_float_precision":
                 from shared.database.sqlite_functions import (
-                    validate_float_precision as func,
+                    validate_float_precision,
                 )
+
+                func = validate_float_precision
             elif function_name == "validate_string_length":
                 from shared.database.sqlite_functions import (
-                    validate_string_length as func,
+                    validate_string_length,
                 )
+
+                func = validate_string_length
             elif function_name == "validate_integer_range_by_digits":
                 from shared.database.sqlite_functions import (
-                    validate_integer_range_by_digits as func,
+                    validate_integer_range_by_digits,
                 )
+
+                func = validate_integer_range_by_digits
             else:
                 pytest.skip(
                     f"SQLite function {function_name} not available for testing"

@@ -8,39 +8,23 @@ This refactored version uses shared utilities to improve maintainability and red
 """
 
 import json
-import os
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any, Dict, List
 
 import pandas as pd
 import pytest
 
-# Import shared test utilities
-try:
-    from tests.integration.core.executors.desired_type_test_utils import (
-        TestAssertionHelpers,
-        TestDataBuilder,
-        TestSetupHelpers,
-    )
-except ImportError:
-    # Fallback for direct test execution
-    import sys
-    from pathlib import Path
-
-    test_dir = Path(__file__).parent
-    sys.path.insert(0, str(test_dir))
-    from desired_type_test_utils import (
-        TestAssertionHelpers,
-        TestDataBuilder,
-        TestSetupHelpers,
-    )
-
 # Ensure proper project root path for imports
 project_root = Path(__file__).parent.parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
+
+# Import shared test utilities
+from tests.integration.core.executors.desired_type_test_utils import (
+    TestAssertionHelpers,
+    TestDataBuilder,
+)
 
 
 @pytest.mark.integration

@@ -806,7 +806,7 @@ class SQLiteDialect(DatabaseDialect):
         return False
 
     def generate_custom_validation_condition(
-        self, validation_type: str, column: str, **params
+        self, validation_type: str, column: str, **params: Any
     ) -> str:
         """
         生成使用SQLite自定义函数的验证条件

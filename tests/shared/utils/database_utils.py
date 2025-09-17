@@ -77,14 +77,32 @@ def get_mysql_connection_params() -> Dict[str, object]:
             "password": params["password"],
         }
 
-    # Fallback to individual environment variables
+    # Only return params if explicit environment variables are set
+    # This ensures tests skip when database is not configured
+    host = os.getenv("MYSQL_HOST")
+    port = os.getenv("MYSQL_PORT")
+    database = os.getenv("MYSQL_DATABASE")
+    username = os.getenv("MYSQL_USERNAME")
+    password = os.getenv("MYSQL_PASSWORD")
+
+    if not all([host, database, username]):
+        # Return dict with None values to trigger test skip
+        return {
+            "db_type": ConnectionType.MYSQL.value,
+            "host": None,
+            "port": None,
+            "database": None,
+            "username": None,
+            "password": None,
+        }
+
     return {
         "db_type": ConnectionType.MYSQL.value,
-        "host": os.getenv("MYSQL_HOST", "localhost"),
-        "port": int(os.getenv("MYSQL_PORT", "3306")),
-        "database": os.getenv("MYSQL_DATABASE", "test_db"),
-        "username": os.getenv("MYSQL_USERNAME", "root"),
-        "password": os.getenv("MYSQL_PASSWORD", "password"),
+        "host": host,
+        "port": int(port) if port else 3306,
+        "database": database,
+        "username": username,
+        "password": password or "",
     }
 
 
@@ -102,14 +120,32 @@ def get_postgresql_connection_params() -> Dict[str, object]:
             "password": params["password"],
         }
 
-    # Fallback to individual environment variables
+    # Only return params if explicit environment variables are set
+    # This ensures tests skip when database is not configured
+    host = os.getenv("POSTGRES_HOST")
+    port = os.getenv("POSTGRES_PORT")
+    database = os.getenv("POSTGRES_DB")
+    username = os.getenv("POSTGRES_USER")
+    password = os.getenv("POSTGRES_PASSWORD")
+
+    if not all([host, database, username]):
+        # Return dict with None values to trigger test skip
+        return {
+            "db_type": ConnectionType.POSTGRESQL.value,
+            "host": None,
+            "port": None,
+            "database": None,
+            "username": None,
+            "password": None,
+        }
+
     return {
         "db_type": ConnectionType.POSTGRESQL.value,
-        "host": os.getenv("POSTGRES_HOST", "localhost"),
-        "port": int(os.getenv("POSTGRES_PORT", "5432")),
-        "database": os.getenv("POSTGRES_DB", "test_db"),
-        "username": os.getenv("POSTGRES_USER", "postgres"),
-        "password": os.getenv("POSTGRES_PASSWORD", "password"),
+        "host": host,
+        "port": int(port) if port else 5432,
+        "database": database,
+        "username": username,
+        "password": password or "",
     }
 
 
@@ -143,13 +179,23 @@ def get_available_databases() -> list[str]:
     """Get list of available databases based on environment variables."""
     available = []
 
+    # Check MySQL availability
     if os.getenv("MYSQL_DB_URL") or all(
-        [os.getenv("MYSQL_HOST"), os.getenv("MYSQL_DATABASE")]
+        [
+            os.getenv("MYSQL_HOST"),
+            os.getenv("MYSQL_DATABASE"),
+            os.getenv("MYSQL_USERNAME"),
+        ]
     ):
         available.append("mysql")
 
+    # Check PostgreSQL availability
     if os.getenv("POSTGRESQL_DB_URL") or all(
-        [os.getenv("POSTGRES_HOST"), os.getenv("POSTGRES_DB")]
+        [
+            os.getenv("POSTGRES_HOST"),
+            os.getenv("POSTGRES_DB"),
+            os.getenv("POSTGRES_USER"),
+        ]
     ):
         available.append("postgresql")
 

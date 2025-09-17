@@ -78,7 +78,7 @@ class CompatibilityAnalyzer:
         desired_type: str,
         field_name: str,
         table_name: str,
-        native_metadata: Dict[str, Any] = None,
+        native_metadata: Optional[Dict[str, Any]] = None,
     ) -> CompatibilityResult:
         """
         Analyze compatibility between native and desired types.
@@ -293,8 +293,9 @@ class CompatibilityAnalyzer:
         }
 
         compatibility_key = (native_canonical, desired_canonical)
-        compatibility_status = compatibility_matrix.get(
-            compatibility_key, "CONFLICTING"
+        compatibility_status = cast(
+            Literal["COMPATIBLE", "INCOMPATIBLE", "CONFLICTING"],
+            compatibility_matrix.get(compatibility_key, "CONFLICTING"),
         )
 
         result = CompatibilityResult(
@@ -399,7 +400,7 @@ class CompatibilityAnalyzer:
             return f"{native} to {desired} conversion is not supported"
 
     def _determine_validation_requirements(
-        self, native: str, desired: str, desired_type_definition: str = None
+        self, native: str, desired: str, desired_type_definition: Optional[str] = None
     ) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
         """
         Determine what type of validation rules are needed for incompatible conversions.
@@ -1788,10 +1789,10 @@ class DesiredTypePhaseExecutor:
                 valid_compatibility_results.append(result)
 
         # Generate validation rules for incompatible conversions
-        generated_rules = []
+        generated_rules: List[RuleSchema] = []
         if valid_compatibility_results:
             # Group by table for rule generation
-            tables_with_incompatible_fields = {}
+            tables_with_incompatible_fields: dict = {}
             for result in valid_compatibility_results:
                 if result.compatibility == "INCOMPATIBLE":
                     table_name = result.table_name
@@ -1839,9 +1840,9 @@ class DesiredTypePhaseExecutor:
                     entity.database = db_name if db_name is not None else "unknown"
 
                     # Get table name from the field metadata using the column name
-                    field_name = entity.column
-                    if field_name and field_name in desired_type_definitions:
-                        entity.table = desired_type_definitions[field_name]["table"]
+                    column_name: Optional[str] = entity.column
+                    if column_name and column_name in desired_type_definitions:
+                        entity.table = desired_type_definitions[column_name]["table"]
                     else:
                         # Fallback: try to extract from existing source config
                         if (
@@ -2123,7 +2124,7 @@ class ResultMerger:
         schema_rules: List[RuleSchema],
         other_rules: List[RuleSchema],
         skip_map: Dict[str, Dict[str, str]],
-        generated_desired_type_rules: List[RuleSchema] = None,
+        generated_desired_type_rules: Optional[List[RuleSchema]] = None,
     ) -> Tuple[List[Any], List[RuleSchema]]:
         """Merge results from both phases and reconstruct skipped results.
 

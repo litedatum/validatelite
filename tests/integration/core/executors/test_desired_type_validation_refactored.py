@@ -346,7 +346,7 @@ class TestDesiredTypeValidationMySQLRefactored:
         from shared.database.connection import get_db_url, get_engine
         from shared.database.query_executor import QueryExecutor
 
-        async def setup_database() -> None:
+        async def setup_database() -> bool:
             # 1. Set up MySQL database and tables
             # Generate engine URL for database operations
             db_url = get_db_url(
@@ -444,6 +444,11 @@ class TestDesiredTypeValidationMySQLRefactored:
                     fetch=False,
                 )
 
+                return True
+
+            except Exception as e:
+                print(f"Database setup failed: {e}")
+                return False
             finally:
                 await engine.dispose()
 
@@ -541,7 +546,7 @@ class TestDesiredTypeValidationPostgreSQLRefactored:
         from shared.database.connection import get_db_url, get_engine
         from shared.database.query_executor import QueryExecutor
 
-        async def setup_database() -> None:
+        async def setup_database() -> bool:
             # 1. Set up PostgreSQL database and tables
             # Generate engine URL for database operations
             db_url = get_db_url(
@@ -635,6 +640,11 @@ class TestDesiredTypeValidationPostgreSQLRefactored:
                     fetch=False,
                 )
 
+                return True
+
+            except Exception as e:
+                print(f"Database setup failed: {e}")
+                return False
             finally:
                 await engine.dispose()
 

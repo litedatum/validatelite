@@ -10,7 +10,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 import pytest
@@ -572,7 +572,8 @@ class TestDesiredTypeValidationEdgeCases:
         """Test enum validation with edge cases."""
 
         # Test edge cases for enum validation
-        enum_test_cases = [
+        # Type annotation for enum test cases
+        enum_test_cases: List[Tuple[List[Any], Any, bool, str]] = [
             # (allowed_values, test_value, expected_result, description)
             (["A", "B", "C"], "A", True, "Valid enum value"),
             (["A", "B", "C"], "D", False, "Invalid enum value"),
@@ -685,7 +686,7 @@ class TestDesiredTypeValidationEdgeCases:
         """Test validation scenarios involving type conversion attempts."""
 
         # Test scenarios where data might not match expected type
-        cross_type_cases = [
+        cross_type_cases: List[Tuple[Any, str, bool, str]] = [
             # (input_value, desired_type, should_pass, description)
             ("123", "integer", True, "String number to integer"),
             ("123.45", "integer", False, "String decimal to integer"),
@@ -866,7 +867,8 @@ class TestDesiredTypeValidationEdgeCases:
     def test_validation_error_handling(self, tmp_path: Path) -> None:
         """Test error handling in validation scenarios."""
 
-        error_test_cases = [
+        # Type annotation for error test cases
+        error_test_cases: List[Tuple[str, Union[str, Callable], Optional[str], str]] = [
             # Cases that should handle errors gracefully
             ("Malformed regex pattern", r"[", "test", "Should handle malformed regex"),
             (
@@ -894,16 +896,26 @@ class TestDesiredTypeValidationEdgeCases:
                 if description == "Malformed regex pattern":
                     import re
 
+                    # Type assertion: test_input should be str for regex patterns
+                    assert isinstance(test_input, str)
                     re.compile(test_input)
                     result = "No error"
                 elif description == "Division by zero in calculation":
+                    # Type assertion: test_input should be str for eval
+                    assert isinstance(test_input, str)
                     result = eval(test_input)
                 elif description == "Invalid date format":
                     from datetime import datetime
 
+                    # Type assertions: both should be str for strptime
+                    assert isinstance(test_input, str)
+                    assert isinstance(test_value, str)
                     datetime.strptime(test_value, test_input)
                     result = "No error"
                 elif description == "Type conversion error":
+                    # Type assertion: test_input should be callable, test_value should be str
+                    assert callable(test_input)
+                    assert isinstance(test_value, str)
                     result = test_input(test_value)
                 else:
                     result = "Unknown test"

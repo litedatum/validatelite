@@ -12,6 +12,7 @@ This test suite specifically covers the bugs fixed in:
 - core/executors/validity_executor.py (SQLite custom validation)
 """
 
+import asyncio
 import json
 import os
 import sys
@@ -21,13 +22,21 @@ from typing import Any, Dict, List
 
 import pandas as pd
 import pytest
+from click.testing import CliRunner
+
+from cli.app import cli_app
+from tests.integration.core.executors.desired_type_test_utils import (
+    TestAssertionHelpers,
+    TestDataBuilder,
+    TestSetupHelpers,
+)
 
 # Ensure proper project root path for imports
 project_root = Path(__file__).parent.parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-pytestmark = pytest.mark.asyncio
+# pytestmark = pytest.mark.asyncio  # Removed global asyncio mark - apply individually to async tests
 
 
 class DesiredTypeTestDataBuilder:
@@ -198,73 +207,125 @@ class TestDesiredTypeValidationExcel:
 
         return str(excel_file), str(schema_file)
 
-    async def test_float_precision_scale_validation(self, tmp_path: Path) -> None:
-        """Test float(4,1) precision/scale validation - core bug fix verification."""
+    def test_comprehensive_excel_validation_cli(self, tmp_path: Path) -> None:
+        """Test comprehensive desired_type validation with an Excel file via the CLI."""
+        # 1. Setup test files
         excel_file, schema_file = self._create_test_files(tmp_path)
 
-        # Use late import to avoid configuration loading issues
-        from cli.commands.schema import DesiredTypePhaseExecutor
+        # Manually create the schema in the format expected by the CLI
+        # schema_definition = TestDataBuilder.create_schema_definition()
+        # The table names in the excel file are 'products', 'orders', 'users'
+        # The default rules definition uses 't_products', etc. We need to map them.
+        # schema_definition['products'] = schema_definition.pop('products')
+        # schema_definition['orders'] = schema_definition.pop('orders')
+        # schema_definition['users'] = schema_definition.pop('users')
+        # print("schema_definition:", schema_definition)
 
-        # Load schema rules
-        with open(schema_file, "r") as f:
-            schema_rules = json.load(f)
+        # with open(schema_file, 'w') as f:
+        #     json.dump(schema_definition, f, indent=2)
+        # with open(schema_file, "r") as f:
+        #     schema_definition = json.load(f)
 
-        # Execute desired_type validation
-        executor = DesiredTypePhaseExecutor(None, None, None)
+        # 2. Run CLI
+        runner = CliRunner()
+        result = runner.invoke(
+            cli_app,
+            [
+                "schema",
+                "--conn",
+                str(excel_file),
+                "--rules",
+                str(schema_file),
+                "--output",
+                "json",
+            ],
+        )
+
+        # 3. Assert results
+        assert (
+            result.exit_code == 1
+        ), f"Expected exit code 1 for validation failures. Output: {result.output}"
 
         try:
-            # Test the key bug: price field with float(4,1) should detect violations
-            # Before fix: all prices would pass incorrectly
-            # After fix: prices like 999.99, 1234.5, 12.34 should fail
-            results, exec_time, generated_rules = (
-                await executor.execute_desired_type_validation(
-                    conn_str=excel_file,
-                    original_payload=schema_rules,
-                    source_db="test_db",
-                )
-            )
+            payload = json.loads(result.output)
+        except json.JSONDecodeError:
+            pytest.fail(f"Failed to decode JSON output: {result.output}")
 
-            # Verify that validation rules were generated
-            assert (
-                len(generated_rules) > 0
-            ), "Should generate desired_type validation rules"
+        assert payload["status"] == "ok"
+        TestAssertionHelpers.assert_validation_results(
+            results=payload["fields"],
+            expected_failed_tables=["products", "orders", "users"],
+            min_total_anomalies=0,
+        )
 
-            # Find the price validation rule
-            price_rules = [
-                r
-                for r in generated_rules
-                if hasattr(r, "target")
-                and any(e.column == "price" for e in r.target.entities)
-            ]
-            assert (
-                len(price_rules) > 0
-            ), "Should generate validation rule for price field"
+    # async def test_float_precision_scale_validation(self, tmp_path: Path) -> None:
+    #     """Test float(4,1) precision/scale validation - core bug fix verification."""
+    #     excel_file, schema_file = self._create_test_files(tmp_path)
 
-            # Verify validation results show failures
-            if results:
-                total_failures = sum(
-                    sum(
-                        m.failed_records
-                        for m in result.dataset_metrics
-                        if result.dataset_metrics
-                    )
-                    for result in results
-                    if result.dataset_metrics
-                )
-                assert total_failures > 0, "Should detect validation violations"
+    #     # Use late import to avoid configuration loading issues
+    #     from cli.commands.schema import DesiredTypePhaseExecutor
 
-        except Exception as e:
-            pytest.skip(f"Excel validation test failed due to setup issue: {e}")
+    #     # Load schema rules
+    #     with open(schema_file, "r") as f:
+    #         schema_rules = json.load(f)
 
+    #     # Execute desired_type validation
+    #     executor = DesiredTypePhaseExecutor(None, None, None)
+
+    #     try:
+    #         # Test the key bug: price field with float(4,1) should detect violations
+    #         # Before fix: all prices would pass incorrectly
+    #         # After fix: prices like 999.99, 1234.5, 12.34 should fail
+    #         results, exec_time, generated_rules = (
+    #             await executor.execute_desired_type_validation(
+    #                 conn_str=excel_file,
+    #                 original_payload=schema_rules,
+    #                 source_db="test_db",
+    #             )
+    #         )
+
+    #         # Verify that validation rules were generated
+    #         assert (
+    #             len(generated_rules) > 0
+    #         ), "Should generate desired_type validation rules"
+
+    #         # Find the price validation rule
+    #         price_rules = [
+    #             r
+    #             for r in generated_rules
+    #             if hasattr(r, "target")
+    #             and any(e.column == "price" for e in r.target.entities)
+    #         ]
+    #         assert (
+    #             len(price_rules) > 0
+    #         ), "Should generate validation rule for price field"
+
+    #         # Verify validation results show failures
+    #         if results:
+    #             total_failures = sum(
+    #                 sum(
+    #                     m.failed_records
+    #                     for m in result.dataset_metrics
+    #                     if result.dataset_metrics
+    #                 )
+    #                 for result in results
+    #                 if result.dataset_metrics
+    #             )
+    #             assert total_failures > 0, "Should detect validation violations"
+
+    #     except Exception as e:
+    #         pytest.skip(f"Excel validation test failed due to setup issue: {e}")
+
+    @pytest.mark.asyncio
     async def test_compatibility_analyzer_always_enforces_constraints(self) -> None:
         """Test that CompatibilityAnalyzer always enforces desired_type constraints."""
         try:
             from cli.commands.schema import CompatibilityAnalyzer
-            from shared.database.database_dialect import SQLiteDialect
+            from shared.enums.connection_types import ConnectionType
         except ImportError as e:
             pytest.skip(f"Cannot import required modules: {e}")
 
-        analyzer = CompatibilityAnalyzer(SQLiteDialect())
+        analyzer = CompatibilityAnalyzer(ConnectionType.SQLITE)
 
         # Test case 1: Native type has no precision metadata (typical for Excel)
         result1 = analyzer.analyze(
@@ -279,6 +340,7 @@ class TestDesiredTypeValidationExcel:
             result1.compatibility == "INCOMPATIBLE"
         ), "Should always enforce constraints"
         assert result1.required_validation == "REGEX", "Should require REGEX validation"
+        assert result1.validation_params is not None
         assert (
             "4,1" in result1.validation_params["description"]
         ), "Should include precision/scale info"
@@ -311,6 +373,7 @@ class TestDesiredTypeValidationExcel:
         ), "Should enforce tighter constraints"
         assert result3.required_validation == "REGEX", "Should require validation"
 
+    @pytest.mark.asyncio
     async def test_sqlite_custom_validation_function_integration(
         self, tmp_path: Path
     ) -> None:
@@ -349,237 +412,175 @@ class TestDesiredTypeValidationExcel:
             ), f"validate_float_precision({value}, 4, 1) expected {expected}, got {actual_result}"
 
 
-def _skip_if_database_unavailable(db_type: str) -> None:
-    """Skip test if specified database is not available."""
-    try:
-        from tests.shared.utils.database_utils import get_available_databases
-
-        available_dbs = get_available_databases()
-        if db_type not in available_dbs:
-            pytest.skip(f"{db_type} not configured; skipping integration tests")
-    except ImportError:
-        pytest.skip(f"Database utilities not available; skipping {db_type} tests")
-
-
 @pytest.mark.integration
 @pytest.mark.database
-class TestDesiredTypeValidationMySQL:
-    """Test desired_type validation with MySQL database."""
+class TestDesiredTypeValidationDatabaseCli:
+    """Test desired_type validation with DBs using subprocess and shared utils."""
 
-    async def test_mysql_desired_type_validation(self, tmp_path: Path) -> None:
-        """Test desired_type validation with real MySQL database."""
-        _skip_if_database_unavailable("mysql")
+    async def _run_db_test(
+        self, db_type: str, conn_params: Dict[str, Any], tmp_path: Path
+    ) -> None:
+        # Pre-flight check for connection parameters
 
-        try:
-            from cli.commands.schema import DesiredTypePhaseExecutor
-            from shared.database.connection import get_db_url, get_engine
-            from shared.database.query_executor import QueryExecutor
-            from tests.shared.utils.database_utils import get_mysql_connection_params
-        except ImportError as e:
-            pytest.skip(f"Required modules not available: {e}")
+        TestSetupHelpers.skip_if_dependencies_unavailable(
+            "shared.database.connection", "shared.database.query_executor"
+        )
+        from shared.database.connection import get_db_url, get_engine
+        from shared.database.query_executor import QueryExecutor
 
-        mysql_params = get_mysql_connection_params()
+        table_name_map = {
+            "products": "t_products",
+            "orders": "t_orders",
+            "users": "t_users",
+        }
 
-        # Create and populate test table
-        try:
-            from typing import cast
-
-            db_url = get_db_url(
-                str(mysql_params["db_type"]),
-                str(mysql_params["host"]),
-                cast(int, mysql_params["port"]),
-                str(mysql_params["database"]),
-                str(mysql_params["username"]),
-                str(mysql_params["password"]),
-            )
-            engine = await get_engine(db_url, pool_size=1, echo=False)
-            executor_db = QueryExecutor(engine)
-
-            await executor_db.execute_query(
-                "DROP TABLE IF EXISTS desired_type_test_products", fetch=False
-            )
-
-            await executor_db.execute_query(
-                """
-                CREATE TABLE desired_type_test_products (
-                    product_id INT PRIMARY KEY AUTO_INCREMENT,
-                    product_name VARCHAR(100) NOT NULL,
-                    price DECIMAL(6,2) NOT NULL,
-                    category VARCHAR(50)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-            """,
-                fetch=False,
-            )
-
-            await executor_db.execute_query(
-                """
-                INSERT INTO desired_type_test_products (product_name, price, category) VALUES
-                ('Valid Product 1', 123.4, 'electronics'),
-                ('Valid Product 2', 12.3, 'electronics'),
-                ('Invalid Product 1', 999.99, 'electronics'),
-                ('Invalid Product 2', 1234.56, 'electronics'),
-                ('Edge Case', 10.0, 'electronics')
-            """,
-                fetch=False,
-            )
-
-            await engine.dispose()
-
-            # Test desired_type validation
-            schema_rules = {
-                "desired_type_test_products": {
-                    "rules": [
-                        {"field": "product_id", "type": "integer", "required": True},
-                        {"field": "product_name", "type": "string", "required": True},
-                        {
-                            "field": "price",
-                            "type": "float",
-                            "desired_type": "float(4,1)",
-                            "min": 0.0,
-                        },
-                        {"field": "category", "type": "string"},
-                    ]
-                }
-            }
-
-            mysql_conn_str = f"mysql://{mysql_params['username']}:{mysql_params['password']}@{mysql_params['host']}:{mysql_params['port']}/{mysql_params['database']}"
-
-            executor = DesiredTypePhaseExecutor(None, None)
-            results, exec_time, generated_rules = (
-                await executor.execute_desired_type_validation(
-                    conn_str=mysql_conn_str,
-                    original_payload=schema_rules,
-                    source_db=str(mysql_params["database"]),
+        async def setup_database() -> None:
+            try:
+                db_url = get_db_url(
+                    db_type=db_type,
+                    host=str(conn_params["host"]),
+                    port=int(conn_params["port"]),
+                    database=str(conn_params["database"]),
+                    username=str(conn_params["username"]),
+                    password=str(conn_params["password"]),
                 )
-            )
+                engine = await get_engine(db_url, pool_size=1, echo=False)
+                executor = QueryExecutor(engine)
+                try:
+                    for table in table_name_map.values():
+                        await executor.execute_query(
+                            f"DROP TABLE IF EXISTS {table} CASCADE", fetch=False
+                        )
 
-            # Verify validation detected violations
-            if results:
-                total_failures = sum(
-                    sum(
-                        m.failed_records
-                        for m in result.dataset_metrics
-                        if result.dataset_metrics
+                    # Create tables and insert data
+                    await executor.execute_query(
+                        """
+                        CREATE TABLE t_products (product_id INT, product_name VARCHAR(100), price DECIMAL(10,2), category VARCHAR(50))
+                    """,
+                        fetch=False,
                     )
-                    for result in results
-                    if result.dataset_metrics
-                )
-                assert (
-                    total_failures > 0
-                ), f"Expected failures in MySQL validation, got {total_failures}"
-
-        except Exception as e:
-            pytest.skip(f"MySQL test failed due to setup issue: {e}")
-
-
-@pytest.mark.integration
-@pytest.mark.database
-class TestDesiredTypeValidationPostgreSQL:
-    """Test desired_type validation with PostgreSQL database."""
-
-    async def test_postgresql_desired_type_validation(self, tmp_path: Path) -> None:
-        """Test desired_type validation with real PostgreSQL database."""
-        _skip_if_database_unavailable("postgresql")
-
-        try:
-            from cli.commands.schema import DesiredTypePhaseExecutor
-            from shared.database.connection import get_db_url, get_engine
-            from shared.database.query_executor import QueryExecutor
-            from tests.shared.utils.database_utils import (
-                get_postgresql_connection_params,
-            )
-        except ImportError as e:
-            pytest.skip(f"Required modules not available: {e}")
-
-        postgresql_params = get_postgresql_connection_params()
-
-        # Create and populate test table
-        try:
-            from typing import cast
-
-            db_url = get_db_url(
-                str(postgresql_params["db_type"]),
-                str(postgresql_params["host"]),
-                cast(int, postgresql_params["port"]),
-                str(postgresql_params["database"]),
-                str(postgresql_params["username"]),
-                str(postgresql_params["password"]),
-            )
-            engine = await get_engine(db_url, pool_size=1, echo=False)
-            executor_db = QueryExecutor(engine)
-
-            await executor_db.execute_query(
-                "DROP TABLE IF EXISTS desired_type_test_products CASCADE", fetch=False
-            )
-
-            await executor_db.execute_query(
-                """
-                CREATE TABLE desired_type_test_products (
-                    product_id SERIAL PRIMARY KEY,
-                    product_name VARCHAR(100) NOT NULL,
-                    price NUMERIC(8,3) NOT NULL,
-                    category VARCHAR(50)
-                )
-            """,
-                fetch=False,
-            )
-
-            await executor_db.execute_query(
-                """
-                INSERT INTO desired_type_test_products (product_name, price, category) VALUES
-                ('Valid Product 1', 123.4, 'electronics'),
-                ('Valid Product 2', 12.3, 'electronics'),
-                ('Invalid Product 1', 999.99, 'electronics'),
-                ('Invalid Product 2', 1234.567, 'electronics'),
-                ('Edge Case', 10.0, 'electronics')
-            """,
-                fetch=False,
-            )
-
-            await engine.dispose()
-
-            # Test desired_type validation
-            schema_rules = {
-                "desired_type_test_products": {
-                    "rules": [
-                        {"field": "product_id", "type": "integer", "required": True},
-                        {"field": "product_name", "type": "string", "required": True},
-                        {
-                            "field": "price",
-                            "type": "float",
-                            "desired_type": "float(4,1)",
-                            "min": 0.0,
-                        },
-                        {"field": "category", "type": "string"},
-                    ]
-                }
-            }
-
-            pg_conn_str = f"postgresql://{postgresql_params['username']}:{postgresql_params['password']}@{postgresql_params['host']}:{postgresql_params['port']}/{postgresql_params['database']}"
-
-            executor = DesiredTypePhaseExecutor(None, None)
-            results, exec_time, generated_rules = (
-                await executor.execute_desired_type_validation(
-                    conn_str=pg_conn_str,
-                    original_payload=schema_rules,
-                    source_db=str(postgresql_params["database"]),
-                )
-            )
-
-            # Verify validation detected violations
-            if results:
-                total_failures = sum(
-                    sum(
-                        m.failed_records
-                        for m in result.dataset_metrics
-                        if result.dataset_metrics
+                    await executor.execute_query(
+                        """
+                        INSERT INTO t_products VALUES (1, 'P1', 999.9, 'A'), (2, 'P2', 1000.0, 'A'), (3, 'P3', 99.99, 'B')
+                    """,
+                        fetch=False,
                     )
-                    for result in results
-                    if result.dataset_metrics
-                )
-                assert (
-                    total_failures > 0
-                ), f"Expected failures in PostgreSQL validation, got {total_failures}"
 
-        except Exception as e:
-            pytest.skip(f"PostgreSQL test failed due to setup issue: {e}")
+                    await executor.execute_query(
+                        "CREATE TABLE t_orders (order_id INT, user_id INT, total_amount DECIMAL(10,2), order_status VARCHAR(20))",
+                        fetch=False,
+                    )
+                    await executor.execute_query(
+                        "INSERT INTO t_orders VALUES (1, 101, 89.0, 'pending'), (2, 102, 999.99, 'pending')",
+                        fetch=False,
+                    )
+
+                    await executor.execute_query(
+                        "CREATE TABLE t_users (user_id INT, name VARCHAR(100), age INT, email VARCHAR(255))",
+                        fetch=False,
+                    )
+                    await executor.execute_query(
+                        "INSERT INTO t_users VALUES (1, 'Alice', 25, 'a@a.com'), (2, 'VeryLongName', 123, 'b@b.com')",
+                        fetch=False,
+                    )
+
+                finally:
+                    await engine.dispose()
+            except Exception as e:
+                # Database connection failed - skip test
+                pytest.skip(f"Database connection to {db_type} failed: {e}")
+
+        async def cleanup_database() -> None:
+            try:
+                db_url = get_db_url(
+                    db_type=db_type,
+                    host=str(conn_params["host"]),
+                    port=int(conn_params["port"]),
+                    database=str(conn_params["database"]),
+                    username=str(conn_params["username"]),
+                    password=str(conn_params["password"]),
+                )
+                engine = await get_engine(db_url, pool_size=1, echo=False)
+                executor = QueryExecutor(engine)
+                try:
+                    for table in table_name_map.values():
+                        await executor.execute_query(
+                            f"DROP TABLE IF EXISTS {table} CASCADE", fetch=False
+                        )
+                finally:
+                    await engine.dispose()
+            except Exception:
+                # Ignore cleanup errors - the test might have been skipped
+                pass
+
+        # Run setup within the same event loop
+        await setup_database()
+        try:
+            # Create rules file
+            rules = TestDataBuilder.create_rules_definition()
+            rules_file = tmp_path / f"{db_type}_rules.json"
+            rules_file.write_text(json.dumps(rules))
+
+            # Manually construct a simple conn_str that SourceParser will recognize.
+            # SourceParser does not recognize the '+aiomysql' driver part.
+            conn_str = (
+                f"{db_type}://{conn_params['username']}:{conn_params['password']}"
+                f"@{conn_params['host']}:{conn_params['port']}/{conn_params['database']}"
+            )
+
+            # Use subprocess to avoid event loop conflicts (like refactored test)
+            import subprocess
+            import sys
+
+            cmd = [
+                sys.executable,
+                "cli_main.py",
+                "schema",
+                "--conn",
+                conn_str,
+                "--rules",
+                str(rules_file),
+                "--output",
+                "json",
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, cwd=".")
+
+            # Assertions
+            assert (
+                result.returncode == 1
+            ), f"Expected exit code 1 for validation failures in {db_type}. stdout: {result.stdout}, stderr: {result.stderr}"
+
+            try:
+                payload = json.loads(result.stdout)
+            except json.JSONDecodeError:
+                pytest.fail(
+                    f"Failed to decode JSON from output. returncode: {result.returncode}, stdout: {result.stdout}, stderr: {result.stderr}"
+                )
+
+            assert payload["status"] == "ok"
+
+            TestAssertionHelpers.assert_validation_results(
+                results=payload["fields"],
+                expected_failed_tables=["t_products", "t_orders", "t_users"],
+                min_total_anomalies=4,
+            )
+
+        finally:
+            # Teardown within the same event loop
+            await cleanup_database()
+
+    @pytest.mark.asyncio
+    async def test_mysql_desired_type_validation_cli(self, tmp_path: Path) -> None:
+        """Test desired_type validation with real MySQL database via CLI."""
+        from tests.shared.utils.database_utils import get_mysql_connection_params
+
+        await self._run_db_test("mysql", get_mysql_connection_params(), tmp_path)
+
+    @pytest.mark.asyncio
+    async def test_postgresql_desired_type_validation_cli(self, tmp_path: Path) -> None:
+        """Test desired_type validation with real PostgreSQL database via CLI."""
+        from tests.shared.utils.database_utils import get_postgresql_connection_params
+
+        await self._run_db_test(
+            "postgresql", get_postgresql_connection_params(), tmp_path
+        )

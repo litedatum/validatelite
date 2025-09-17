@@ -145,8 +145,8 @@ def validate_integer_range_by_digits(value: Any, max_digits: int) -> bool:
 
     try:
         int_val = int(float(value))
-        max_val = 10**max_digits - 1  # 例如：5位数的最大值是99999
-        min_val = -(10**max_digits - 1)  # 例如：5位数的最小值是-99999
+        max_val: int = 10**max_digits - 1  # 例如：5位数的最大值是99999
+        min_val: int = -(10**max_digits - 1)  # 例如：5位数的最小值是-99999
         return min_val <= int_val <= max_val
     except (ValueError, TypeError, OverflowError):
         return False

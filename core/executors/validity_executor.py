@@ -723,6 +723,11 @@ class ValidityExecutor(BaseExecutor):
         validation_condition = None
         rule_name = getattr(rule, "name", "")
 
+        from typing import cast
+
+        from shared.database.database_dialect import SQLiteDialect
+
+        sqlite_dialect = cast(SQLiteDialect, self.dialect)
         # 首先检查规则名称包含的信息
         if "regex" in rule_name and "age" in rule_name:
             # integer(2) 类型验证 - 从pattern提取
@@ -730,7 +735,7 @@ class ValidityExecutor(BaseExecutor):
             # print(f"DEBUG: Extracted max_digits for age: {max_digits}")
             if max_digits:
                 validation_condition = (
-                    self.dialect.generate_custom_validation_condition(
+                    sqlite_dialect.generate_custom_validation_condition(
                         "integer_digits", column, max_digits=max_digits
                     )
                 )
@@ -742,7 +747,7 @@ class ValidityExecutor(BaseExecutor):
             # print(f"DEBUG: Extracted max_length for price: {max_length}")
             if max_length:
                 validation_condition = (
-                    self.dialect.generate_custom_validation_condition(
+                    sqlite_dialect.generate_custom_validation_condition(
                         "string_length", column, max_length=max_length
                     )
                 )
@@ -756,7 +761,7 @@ class ValidityExecutor(BaseExecutor):
                 )
                 if precision is not None and scale is not None:
                     validation_condition = (
-                        self.dialect.generate_custom_validation_condition(
+                        sqlite_dialect.generate_custom_validation_condition(
                             "float_precision", column, precision=precision, scale=scale
                         )
                     )
@@ -770,7 +775,7 @@ class ValidityExecutor(BaseExecutor):
                 # total_amount: "desired_type": "integer(2)" 应该限制为2位数
                 # 对于这种模式，我们应该直接使用2位数的验证
                 validation_condition = (
-                    self.dialect.generate_custom_validation_condition(
+                    sqlite_dialect.generate_custom_validation_condition(
                         "integer_digits", column, max_digits=2
                     )
                 )
@@ -781,7 +786,7 @@ class ValidityExecutor(BaseExecutor):
                 # print(f"DEBUG: Extracted max_digits for total_amount: {max_digits}")
                 if max_digits:
                     validation_condition = (
-                        self.dialect.generate_custom_validation_condition(
+                        sqlite_dialect.generate_custom_validation_condition(
                             "integer_digits", column, max_digits=max_digits
                         )
                     )
@@ -803,7 +808,7 @@ class ValidityExecutor(BaseExecutor):
                 # print(f"DEBUG: Extracted max_digits: {max_digits}")
                 if max_digits:
                     validation_condition = (
-                        self.dialect.generate_custom_validation_condition(
+                        sqlite_dialect.generate_custom_validation_condition(
                             "integer_digits", column, max_digits=max_digits
                         )
                     )
@@ -820,7 +825,7 @@ class ValidityExecutor(BaseExecutor):
                 # print(f"DEBUG: Extracted max_length: {max_length}")
                 if max_length:
                     validation_condition = (
-                        self.dialect.generate_custom_validation_condition(
+                        sqlite_dialect.generate_custom_validation_condition(
                             "string_length", column, max_length=max_length
                         )
                     )
@@ -846,7 +851,7 @@ class ValidityExecutor(BaseExecutor):
         # 首先尝试从参数中提取
         params = getattr(rule, "parameters", {})
         if "max_digits" in params:
-            return params["max_digits"]
+            return int(params["max_digits"])
 
         # 尝试从pattern参数中提取（适用于REGEX规则）
         if "pattern" in params:
@@ -884,36 +889,12 @@ class ValidityExecutor(BaseExecutor):
 
         return None
 
-    def _extract_float_precision_scale_from_description(
-        self, description: str
-    ) -> tuple[Optional[int], Optional[int]]:
-        """从描述中提取float的precision和scale信息"""
-        import re
-
-        # 查找类似 "Float precision/scale validation for (4,1)" 的模式
-        match = re.search(r"validation for \((\d+),(\d+)\)", description)
-        if match:
-            precision = int(match.group(1))
-            scale = int(match.group(2))
-            return precision, scale
-
-        # 查找类似 "precision=4, scale=1" 的模式
-        precision_match = re.search(
-            r"precision[=:]?\s*(\d+)", description, re.IGNORECASE
-        )
-        scale_match = re.search(r"scale[=:]?\s*(\d+)", description, re.IGNORECASE)
-
-        precision = int(precision_match.group(1)) if precision_match else None
-        scale = int(scale_match.group(1)) if scale_match else None
-
-        return precision, scale
-
     def _extract_length_from_rule(self, rule: RuleSchema) -> Optional[int]:
         """从规则中提取字符串长度信息"""
         # 首先尝试从参数中提取
         params = getattr(rule, "parameters", {})
         if "max_length" in params:
-            return params["max_length"]
+            return int(params["max_length"])
 
         # 尝试从pattern参数中提取（适用于REGEX规则）
         if "pattern" in params:
@@ -955,8 +936,8 @@ class ValidityExecutor(BaseExecutor):
         # 查找类似 "Float precision/scale validation for (4,1)" 的模式
         match = re.search(r"validation for \((\d+),(\d+)\)", description)
         if match:
-            precision = int(match.group(1))
-            scale = int(match.group(2))
+            precision: Optional[int] = int(match.group(1))
+            scale: Optional[int] = int(match.group(2))
             return precision, scale
 
         # 查找类似 "precision=4, scale=1" 的模式

@@ -15,7 +15,7 @@
       { "field": "customer_id", "type": "integer", "required": true },
       { "field": "product_name", "type": "string", "max_length": 255, "desired_type": "string(12)", "required": true },
       { "field": "quantity", "type": "integer", "desired_type": "integer(1)", "required": true },
-      { "field": "price", "type": "float(10,2)", "desired_type": "string(8)","required": true},
+      { "field": "price", "type": "float(5,2)", "desired_type": "string(8)","required": true},
       { "field": "status", "type": "string", "max_length": 50, "required": true },
       { "field": "order_date", "type": "date", "required": true }
     ],
