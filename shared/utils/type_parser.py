@@ -52,9 +52,7 @@ class TypeParser:
     _DATETIME_PATTERN = re.compile(
         r'^datetime\s*\(\s*[\'"](.+?)[\'"]\s*\)$', re.IGNORECASE
     )
-    _DATE_PATTERN = re.compile(
-        r'^date\s*\(\s*[\'"](.+?)[\'"]\s*\)$', re.IGNORECASE
-    )
+    _DATE_PATTERN = re.compile(r'^date\s*\(\s*[\'"](.+?)[\'"]\s*\)$', re.IGNORECASE)
     _SIMPLE_TYPE_PATTERN = re.compile(
         r"^(string|str|integer|int|float|boolean|bool|date|datetime)$", re.IGNORECASE
     )
@@ -227,7 +225,8 @@ class TypeParser:
         if "format" in parsed_type:
             if type_value not in (DataType.DATETIME.value, DataType.DATE.value):
                 raise TypeParseError(
-                    f"format can only be specified for DATETIME or DATE type, not {type_value}"
+                    f"format can only be specified for DATETIME or DATE type, "
+                    f"not {type_value}"
                 )
 
     @classmethod

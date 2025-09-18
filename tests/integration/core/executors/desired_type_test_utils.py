@@ -386,8 +386,16 @@ class TestDataBuilder:
                         "desired_type": "integer(2)",
                     },
                     {"field": "order_status", "type": "string", "required": True},
-                    {"field": "order_date", "type": "string", "desired_type": "date('YYYY-MM-DD')"},
-                    {"field": "order_time", "type": "string", "desired_type": "datetime('HH:MI:SS')"},
+                    {
+                        "field": "order_date",
+                        "type": "string",
+                        "desired_type": "date('YYYY-MM-DD')",
+                    },
+                    {
+                        "field": "order_time",
+                        "type": "string",
+                        "desired_type": "datetime('HH:MI:SS')",
+                    },
                 ]
             },
             "t_users": {
@@ -406,7 +414,11 @@ class TestDataBuilder:
                         "desired_type": "integer(2)",
                     },
                     {"field": "email", "type": "string", "required": True},
-                    {"field": "birthday", "type": "integer", "desired_type": "date('YYYYMMDD')"},
+                    {
+                        "field": "birthday",
+                        "type": "integer",
+                        "desired_type": "date('YYYYMMDD')",
+                    },
                 ]
             },
         }

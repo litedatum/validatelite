@@ -88,17 +88,17 @@ class DesiredTypeTestDataBuilder:
             "order_date": [
                 "2020-02-09",
                 "2019-11-22",
-                "2021-02-29", # invalid date
-                "2021-04-31", # invalid date
+                "2021-02-29",  # invalid date
+                "2021-04-31",  # invalid date
                 "2011-01-05",
-                "2024-13-06", # invalid date
+                "2024-13-06",  # invalid date
             ],
             "order_time": [
                 "12:13:14",
                 "13:00:00",
-                "14:15:78", # invalid time (78 seconds)
+                "14:15:78",  # invalid time (78 seconds)
                 "15:16:17",
-                "25:17:18", # invalid time (25 hours)
+                "25:17:18",  # invalid time (25 hours)
                 "23:59:59",
             ],
         }
@@ -135,11 +135,11 @@ class DesiredTypeTestDataBuilder:
             ],
             "birthday": [
                 19680223,
-                19680230, # invalid date (Feb 30)
+                19680230,  # invalid date (Feb 30)
                 19680401,
-                19780431, # invalid date (Apr 31)
+                19780431,  # invalid date (Apr 31)
                 19680630,
-                19680631, # invalid date (Jun 31)
+                19680631,  # invalid date (Jun 31)
                 19680701,
             ],
         }
@@ -188,8 +188,16 @@ class DesiredTypeTestDataBuilder:
                         "type": "string",
                         "enum": ["pending", "confirmed", "shipped"],
                     },
-                    {"field": "order_date", "type": "string", "desired_type": "date('YYYY-MM-DD')"},
-                    {"field": "order_time", "type": "string", "desired_type": "datetime('HH:MI:SS')"},
+                    {
+                        "field": "order_date",
+                        "type": "string",
+                        "desired_type": "date('YYYY-MM-DD')",
+                    },
+                    {
+                        "field": "order_time",
+                        "type": "string",
+                        "desired_type": "datetime('HH:MI:SS')",
+                    },
                 ]
             },
             "users": {
@@ -209,7 +217,11 @@ class DesiredTypeTestDataBuilder:
                         "max": 120,
                     },
                     {"field": "email", "type": "string", "required": True},
-                    {"field": "birthday", "type": "integer", "desired_type": "date('YYYYMMDD')"},
+                    {
+                        "field": "birthday",
+                        "type": "integer",
+                        "desired_type": "date('YYYYMMDD')",
+                    },
                 ]
             },
         }
@@ -276,23 +288,35 @@ class TestDesiredTypeValidationExcel:
         results = payload["results"]
 
         # Find DATE_FORMAT rule results
-        date_format_results = [r for r in results if "DATE_FORMAT" in str(r.get("execution_plan", {})) or
-                              (r.get("execution_message", "").find("DATE_FORMAT") != -1)]
+        date_format_results = [
+            r
+            for r in results
+            if "DATE_FORMAT" in str(r.get("execution_plan", {}))
+            or (r.get("execution_message", "").find("DATE_FORMAT") != -1)
+        ]
 
         # Verify we have DATE_FORMAT validations running
-        assert len(date_format_results) >= 0, "Should have DATE_FORMAT validation results"
+        assert (
+            len(date_format_results) >= 0
+        ), "Should have DATE_FORMAT validation results"
 
         # Check specific field validation results in the fields section
         fields = payload["fields"]
 
         # Find orders table fields
         orders_fields = [f for f in fields if f["table"] == "orders"]
-        order_date_field = next((f for f in orders_fields if f["column"] == "order_date"), None)
-        order_time_field = next((f for f in orders_fields if f["column"] == "order_time"), None)
+        order_date_field = next(
+            (f for f in orders_fields if f["column"] == "order_date"), None
+        )
+        order_time_field = next(
+            (f for f in orders_fields if f["column"] == "order_time"), None
+        )
 
         # Find users table fields
         users_fields = [f for f in fields if f["table"] == "users"]
-        birthday_field = next((f for f in users_fields if f["column"] == "birthday"), None)
+        birthday_field = next(
+            (f for f in users_fields if f["column"] == "birthday"), None
+        )
 
         # Verify DATE_FORMAT validation was attempted for these fields
         if order_date_field:
@@ -315,7 +339,9 @@ class TestDesiredTypeValidationExcel:
         # We expect at least some failures from DATE_FORMAT validations
         # Expected: 3 from order_date + 2 from order_time + 3 from birthday = 8 minimum
         # Note: The exact count may vary based on other validation rules
-        assert total_failed_records >= 8, f"Expected at least 8 failed records from date format validations, got {total_failed_records}"
+        assert (
+            total_failed_records >= 8
+        ), f"Expected at least 8 failed records from date format validations, got {total_failed_records}"
 
     @pytest.mark.asyncio
     async def test_compatibility_analyzer_always_enforces_constraints(self) -> None:

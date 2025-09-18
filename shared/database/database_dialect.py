@@ -499,8 +499,12 @@ class PostgreSQLDialect(DatabaseDialect):
         """PostgreSQL: Generate regex pattern for first-stage validation"""
         # Convert format pattern to regex for PostgreSQL
         regex_pattern = self._format_pattern_to_regex(format_pattern)
-        # Return condition that identifies invalid formats (for COUNT in anomaly detection)
-        return f"CASE WHEN {column} IS NOT NULL AND {column} !~ '{regex_pattern}' THEN NULL ELSE 'valid' END"
+        # Return condition that identifies invalid formats
+        #  (for COUNT in anomaly detection)
+        return (
+            f"CASE WHEN {column} IS NOT NULL AND {column} !~ '{regex_pattern}' "
+            f"THEN NULL ELSE 'valid' END"
+        )
 
     def is_supported_date_format(self) -> bool:
         """PostgreSQL supports date formats with two-stage validation"""
@@ -659,7 +663,7 @@ class PostgreSQLDialect(DatabaseDialect):
         column: str,
         format_pattern: str,
         table_name: str,
-        filter_condition: str = None,
+        filter_condition: Optional[str] = None,
     ) -> tuple[str, str]:
         """Generate two-stage date validation SQL for PostgreSQL
 
@@ -678,7 +682,7 @@ class PostgreSQLDialect(DatabaseDialect):
             where_clause += f" AND ({filter_condition})"
 
         stage1_sql = (
-            f"SELECT COUNT(DISTINCT {column}) as regex_failed_count "
+            f"SELECT COUNT(1) as regex_failed_count "
             f"FROM {table_name} {where_clause}"
         )
 
@@ -801,7 +805,10 @@ class SQLiteDialect(DatabaseDialect):
     def get_date_clause(self, column: str, format_pattern: str) -> str:
         """SQLite uses custom function for date validation"""
         # Use custom function for date validation
-        return f"CASE WHEN IS_VALID_DATE({column}, '{format_pattern}') THEN 'valid' ELSE NULL END"
+        return (
+            f"CASE WHEN IS_VALID_DATE({column}, '{format_pattern}') THEN 'valid' "
+            f"ELSE NULL END"
+        )
 
     def is_supported_date_format(self) -> bool:
         """SQLite supports date formats with custom functions"""

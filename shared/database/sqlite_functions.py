@@ -191,7 +191,7 @@ def validate_date_format(value: Any, format_pattern: str) -> bool:
         validate_date_format(20231225, "YYYYMMDD") -> True
         validate_date_format(20230231, "YYYYMMDD") -> False (invalid date)
     """
-    if value is None or (isinstance(value, str) and value.strip() == ''):
+    if value is None or (isinstance(value, str) and value.strip() == ""):
         return True  # NULL or empty strings are not date format errors
 
     try:
@@ -217,12 +217,18 @@ def _convert_format_to_python(format_pattern: str) -> str:
     """Convert custom format pattern to Python datetime format"""
     # Handle both case variations (YYYY/yyyy, MM/mm, etc.)
     pattern_map = {
-        'YYYY': '%Y', 'yyyy': '%Y',
-        'MM': '%m', 'mm': '%m',
-        'DD': '%d', 'dd': '%d',
-        'HH': '%H', 'hh': '%H',
-        'MI': '%M', 'mi': '%M',
-        'SS': '%S', 'ss': '%S',
+        "YYYY": "%Y",
+        "yyyy": "%Y",
+        "MM": "%m",
+        "mm": "%m",
+        "DD": "%d",
+        "dd": "%d",
+        "HH": "%H",
+        "hh": "%H",
+        "MI": "%M",
+        "mi": "%M",
+        "SS": "%S",
+        "ss": "%S",
     }
 
     python_format = format_pattern

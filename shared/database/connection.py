@@ -77,9 +77,7 @@ def _register_sqlite_functions(dbapi_connection: Any, connection_record: Any) ->
         )
 
         # Register date format validation function
-        dbapi_connection.create_function(
-            "IS_VALID_DATE", 2, is_valid_date
-        )
+        dbapi_connection.create_function("IS_VALID_DATE", 2, is_valid_date)
 
         logger.debug("SQLite custom validation functions registered successfully")
 

@@ -8,21 +8,26 @@ This test verifies:
 4. Rule merger correctly identifies DATE_FORMAT rules as independent for PostgreSQL/SQLite
 """
 
-import pytest
 from unittest.mock import Mock, patch
-from datetime import datetime
 
-from shared.database.database_dialect import PostgreSQLDialect, SQLiteDialect, MySQLDialect, DatabaseType
-from shared.enums import RuleType
-from shared.schema.connection_schema import ConnectionSchema
-from shared.enums.connection_types import ConnectionType
+import pytest
+
 from core.engine.rule_merger import RuleMergeManager
+from shared.database.database_dialect import (
+    DatabaseType,
+    MySQLDialect,
+    PostgreSQLDialect,
+    SQLiteDialect,
+)
+from shared.enums import RuleType
+from shared.enums.connection_types import ConnectionType
+from shared.schema.connection_schema import ConnectionSchema
 
 
 class TestDateFormatPatternSupport:
     """Test flexible date format pattern support"""
 
-    def test_postgresql_format_pattern_to_regex(self):
+    def test_postgresql_format_pattern_to_regex(self) -> None:
         """Test PostgreSQL format pattern conversion to regex"""
         dialect = PostgreSQLDialect()
 
@@ -37,9 +42,11 @@ class TestDateFormatPatternSupport:
 
         for format_pattern, expected_regex in test_cases:
             result = dialect._format_pattern_to_regex(format_pattern)
-            assert result == expected_regex, f"Format {format_pattern} should generate regex {expected_regex}, got {result}"
+            assert (
+                result == expected_regex
+            ), f"Format {format_pattern} should generate regex {expected_regex}, got {result}"
 
-    def test_postgresql_normalize_format_pattern(self):
+    def test_postgresql_normalize_format_pattern(self) -> None:
         """Test PostgreSQL format pattern normalization for Python"""
         dialect = PostgreSQLDialect()
 
@@ -53,9 +60,11 @@ class TestDateFormatPatternSupport:
 
         for format_pattern, expected_python in test_cases:
             result = dialect._normalize_format_pattern(format_pattern)
-            assert result == expected_python, f"Format {format_pattern} should normalize to {expected_python}, got {result}"
+            assert (
+                result == expected_python
+            ), f"Format {format_pattern} should normalize to {expected_python}, got {result}"
 
-    def test_sqlite_normalize_format_pattern(self):
+    def test_sqlite_normalize_format_pattern(self) -> None:
         """Test SQLite format pattern normalization"""
         dialect = SQLiteDialect()
 
@@ -69,23 +78,25 @@ class TestDateFormatPatternSupport:
 
         for format_pattern, expected_python in test_cases:
             result = dialect._normalize_format_pattern(format_pattern)
-            assert result == expected_python, f"Format {format_pattern} should normalize to {expected_python}, got {result}"
+            assert (
+                result == expected_python
+            ), f"Format {format_pattern} should normalize to {expected_python}, got {result}"
 
 
 class TestDateFormatSupportStatus:
     """Test that databases report correct date format support status"""
 
-    def test_mysql_supports_date_format(self):
+    def test_mysql_supports_date_format(self) -> None:
         """MySQL should support date formats"""
         dialect = MySQLDialect()
         assert dialect.is_supported_date_format() == True
 
-    def test_postgresql_supports_date_format(self):
+    def test_postgresql_supports_date_format(self) -> None:
         """PostgreSQL should now support date formats with two-stage validation"""
         dialect = PostgreSQLDialect()
         assert dialect.is_supported_date_format() == True
 
-    def test_sqlite_supports_date_format(self):
+    def test_sqlite_supports_date_format(self) -> None:
         """SQLite should now support date formats with custom functions"""
         dialect = SQLiteDialect()
         assert dialect.is_supported_date_format() == True
@@ -94,7 +105,7 @@ class TestDateFormatSupportStatus:
 class TestPostgreSQLTwoStageValidation:
     """Test PostgreSQL two-stage date validation SQL generation"""
 
-    def test_two_stage_sql_generation(self):
+    def test_two_stage_sql_generation(self) -> None:
         """Test PostgreSQL two-stage SQL generation"""
         dialect = PostgreSQLDialect()
 
@@ -123,7 +134,7 @@ class TestPostgreSQLTwoStageValidation:
 class TestSQLiteCustomFunction:
     """Test SQLite custom function setup"""
 
-    def test_sqlite_date_validation_function(self):
+    def test_sqlite_date_validation_function(self) -> None:
         """Test SQLite date validation custom function"""
         from shared.database.sqlite_functions import is_valid_date
 
@@ -137,7 +148,7 @@ class TestSQLiteCustomFunction:
         assert is_valid_date("not-a-date", "%Y-%m-%d") == False  # Invalid format
         assert is_valid_date("2023-13-01", "%Y-%m-%d") == False  # Invalid month
 
-    def test_sqlite_get_date_clause(self):
+    def test_sqlite_get_date_clause(self) -> None:
         """Test SQLite get_date_clause uses custom function"""
         dialect = SQLiteDialect()
 
@@ -151,13 +162,13 @@ class TestSQLiteCustomFunction:
 class TestRuleMergerDateFormatHandling:
     """Test that rule merger correctly handles DATE_FORMAT rules"""
 
-    def test_postgresql_date_format_rules_are_independent(self):
+    def test_postgresql_date_format_rules_are_independent(self) -> None:
         """PostgreSQL DATE_FORMAT rules should be marked as independent"""
         # Mock PostgreSQL connection
         connection = Mock(spec=ConnectionSchema)
         connection.connection_type = ConnectionType.POSTGRESQL
 
-        with patch('core.engine.rule_merger.get_dialect') as mock_get_dialect:
+        with patch("core.engine.rule_merger.get_dialect") as mock_get_dialect:
             mock_dialect = Mock()
             mock_dialect.database_type = DatabaseType.POSTGRESQL
             mock_dialect.is_supported_date_format.return_value = True
@@ -168,13 +179,13 @@ class TestRuleMergerDateFormatHandling:
             # DATE_FORMAT should be in independent rule types for PostgreSQL
             assert RuleType.DATE_FORMAT in merger.independent_rule_types
 
-    def test_sqlite_date_format_rules_are_independent(self):
+    def test_sqlite_date_format_rules_are_independent(self) -> None:
         """SQLite DATE_FORMAT rules should be marked as independent"""
         # Mock SQLite connection
         connection = Mock(spec=ConnectionSchema)
         connection.connection_type = ConnectionType.SQLITE
 
-        with patch('core.engine.rule_merger.get_dialect') as mock_get_dialect:
+        with patch("core.engine.rule_merger.get_dialect") as mock_get_dialect:
             mock_dialect = Mock()
             mock_dialect.database_type = DatabaseType.SQLITE
             mock_dialect.is_supported_date_format.return_value = True
@@ -185,13 +196,13 @@ class TestRuleMergerDateFormatHandling:
             # DATE_FORMAT should be in independent rule types for SQLite
             assert RuleType.DATE_FORMAT in merger.independent_rule_types
 
-    def test_mysql_date_format_rules_can_be_merged(self):
+    def test_mysql_date_format_rules_can_be_merged(self) -> None:
         """MySQL DATE_FORMAT rules should be mergeable"""
         # Mock MySQL connection
         connection = Mock(spec=ConnectionSchema)
         connection.connection_type = ConnectionType.MYSQL
 
-        with patch('core.engine.rule_merger.get_dialect') as mock_get_dialect:
+        with patch("core.engine.rule_merger.get_dialect") as mock_get_dialect:
             mock_dialect = Mock()
             mock_dialect.database_type = DatabaseType.MYSQL
             mock_dialect.is_supported_date_format.return_value = True

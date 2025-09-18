@@ -277,12 +277,18 @@ class CompatibilityAnalyzer:
             ("STRING", "STRING"): "COMPATIBLE",
             ("STRING", "INTEGER"): "INCOMPATIBLE",
             ("STRING", "FLOAT"): "INCOMPATIBLE",
-            ("STRING", "DATE"): "INCOMPATIBLE",  # String to Date requires date format validation
+            (
+                "STRING",
+                "DATE",
+            ): "INCOMPATIBLE",  # String to Date requires date format validation
             ("STRING", "DATETIME"): "INCOMPATIBLE",
             ("INTEGER", "STRING"): "COMPATIBLE",
             ("INTEGER", "INTEGER"): "COMPATIBLE",
             ("INTEGER", "FLOAT"): "COMPATIBLE",
-            ("INTEGER", "DATE"): "INCOMPATIBLE",  # Integer to Date requires date format validation
+            (
+                "INTEGER",
+                "DATE",
+            ): "INCOMPATIBLE",  # Integer to Date requires date format validation
             ("INTEGER", "DATETIME"): "INCOMPATIBLE",
             ("FLOAT", "STRING"): "COMPATIBLE",
             ("FLOAT", "INTEGER"): "INCOMPATIBLE",
@@ -291,7 +297,7 @@ class CompatibilityAnalyzer:
             ("FLOAT", "DATETIME"): "CONFLICTING",
             ("DATE", "STRING"): "COMPATIBLE",
             ("DATE", "INTEGER"): "CONFLICTING",  # Date to Integer is not supported
-            ("DATE", "FLOAT"): "CONFLICTING",   # Date to Float is not supported
+            ("DATE", "FLOAT"): "CONFLICTING",  # Date to Float is not supported
             ("DATE", "DATE"): "COMPATIBLE",
             ("DATE", "DATETIME"): "COMPATIBLE",  # Date can be expanded to DateTime
             ("DATETIME", "STRING"): "COMPATIBLE",
