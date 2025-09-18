@@ -9,6 +9,7 @@ Supports formats like:
 - integer(10) → {"type": "integer", "max_digits": 10}
 - float(12,2) → {"type": "float", "precision": 12, "scale": 2}
 - datetime('yyyymmdd') → {"type": "datetime", "format": "yyyymmdd"}
+- date('YYYY-MM-DD') → {"type": "date", "format": "YYYY-MM-DD"}
 """
 
 import re
@@ -50,6 +51,9 @@ class TypeParser:
     )
     _DATETIME_PATTERN = re.compile(
         r'^datetime\s*\(\s*[\'"](.+?)[\'"]\s*\)$', re.IGNORECASE
+    )
+    _DATE_PATTERN = re.compile(
+        r'^date\s*\(\s*[\'"](.+?)[\'"]\s*\)$', re.IGNORECASE
     )
     _SIMPLE_TYPE_PATTERN = re.compile(
         r"^(string|str|integer|int|float|boolean|bool|date|datetime)$", re.IGNORECASE
@@ -150,6 +154,12 @@ class TypeParser:
             format_str = match.group(1)
             return {"type": DataType.DATETIME.value, "format": format_str}
 
+        # Try date('format') pattern
+        match = cls._DATE_PATTERN.match(type_str)
+        if match:
+            format_str = match.group(1)
+            return {"type": DataType.DATE.value, "format": format_str}
+
         # Try simple type names
         match = cls._SIMPLE_TYPE_PATTERN.match(type_str)
         if match:
@@ -213,11 +223,11 @@ class TypeParser:
             ):
                 raise TypeParseError("scale cannot be greater than precision")
 
-        # Validate format is only for datetime
+        # Validate format is only for datetime and date
         if "format" in parsed_type:
-            if type_value != DataType.DATETIME.value:
+            if type_value not in (DataType.DATETIME.value, DataType.DATE.value):
                 raise TypeParseError(
-                    f"format can only be specified for DATETIME type, not {type_value}"
+                    f"format can only be specified for DATETIME or DATE type, not {type_value}"
                 )
 
     @classmethod
@@ -232,6 +242,7 @@ class TypeParser:
             or cls._INTEGER_PATTERN.match(type_str)
             or cls._FLOAT_PATTERN.match(type_str)
             or cls._DATETIME_PATTERN.match(type_str)
+            or cls._DATE_PATTERN.match(type_str)
             or cls._SIMPLE_TYPE_PATTERN.match(type_str)
         )
 

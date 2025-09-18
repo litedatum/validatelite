@@ -172,3 +172,67 @@ def detect_invalid_string_length(value: Any, max_length: int) -> bool:
 def detect_invalid_float_precision(value: Any, precision: int, scale: int) -> bool:
     """Detect values that do not meet floating point precision requirements"""
     return not validate_float_precision(value, precision, scale)
+
+
+def validate_date_format(value: Any, format_pattern: str) -> bool:
+    """Validate date string format and semantic correctness
+
+    Args:
+        value: Date value to be validated (string or integer)
+        format_pattern: Date format pattern (YYYY-MM-DD, YYYYMMDD, etc.)
+
+    Returns:
+        bool: True indicates validation passed, False indicates validation failed
+
+    Examples:
+        validate_date_format("2023-12-25", "YYYY-MM-DD") -> True
+        validate_date_format("2023-02-31", "YYYY-MM-DD") -> False (invalid date)
+        validate_date_format("not-a-date", "YYYY-MM-DD") -> False (invalid format)
+        validate_date_format(20231225, "YYYYMMDD") -> True
+        validate_date_format(20230231, "YYYYMMDD") -> False (invalid date)
+    """
+    if value is None or (isinstance(value, str) and value.strip() == ''):
+        return True  # NULL or empty strings are not date format errors
+
+    try:
+        from datetime import datetime
+
+        # Convert format pattern to Python datetime format
+        python_format = _convert_format_to_python(format_pattern)
+
+        # Convert value to string if it's not already
+        date_str = str(value)
+
+        # Parse date using the specified format
+        parsed_date = datetime.strptime(date_str, python_format)
+
+        # Round-trip validation to catch semantic errors like 2000-02-31
+        return parsed_date.strftime(python_format) == date_str
+
+    except (ValueError, TypeError):
+        return False
+
+
+def _convert_format_to_python(format_pattern: str) -> str:
+    """Convert custom format pattern to Python datetime format"""
+    # Handle both case variations (YYYY/yyyy, MM/mm, etc.)
+    pattern_map = {
+        'YYYY': '%Y', 'yyyy': '%Y',
+        'MM': '%m', 'mm': '%m',
+        'DD': '%d', 'dd': '%d',
+        'HH': '%H', 'hh': '%H',
+        'MI': '%M', 'mi': '%M',
+        'SS': '%S', 'ss': '%S',
+    }
+
+    python_format = format_pattern
+    # Sort by length (descending) to avoid partial replacements
+    for fmt in sorted(pattern_map.keys(), key=len, reverse=True):
+        python_format = python_format.replace(fmt, pattern_map[fmt])
+
+    return python_format
+
+
+def is_valid_date(value: Any, format_pattern: str) -> bool:
+    """Alias for validate_date_format for SQLite registration"""
+    return validate_date_format(value, format_pattern)

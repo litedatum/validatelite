@@ -277,18 +277,27 @@ class CompatibilityAnalyzer:
             ("STRING", "STRING"): "COMPATIBLE",
             ("STRING", "INTEGER"): "INCOMPATIBLE",
             ("STRING", "FLOAT"): "INCOMPATIBLE",
+            ("STRING", "DATE"): "INCOMPATIBLE",  # String to Date requires date format validation
             ("STRING", "DATETIME"): "INCOMPATIBLE",
             ("INTEGER", "STRING"): "COMPATIBLE",
             ("INTEGER", "INTEGER"): "COMPATIBLE",
             ("INTEGER", "FLOAT"): "COMPATIBLE",
+            ("INTEGER", "DATE"): "INCOMPATIBLE",  # Integer to Date requires date format validation
             ("INTEGER", "DATETIME"): "INCOMPATIBLE",
             ("FLOAT", "STRING"): "COMPATIBLE",
             ("FLOAT", "INTEGER"): "INCOMPATIBLE",
             ("FLOAT", "FLOAT"): "COMPATIBLE",
+            ("FLOAT", "DATE"): "CONFLICTING",  # Float to Date is not supported
             ("FLOAT", "DATETIME"): "CONFLICTING",
+            ("DATE", "STRING"): "COMPATIBLE",
+            ("DATE", "INTEGER"): "CONFLICTING",  # Date to Integer is not supported
+            ("DATE", "FLOAT"): "CONFLICTING",   # Date to Float is not supported
+            ("DATE", "DATE"): "COMPATIBLE",
+            ("DATE", "DATETIME"): "COMPATIBLE",  # Date can be expanded to DateTime
             ("DATETIME", "STRING"): "COMPATIBLE",
             ("DATETIME", "INTEGER"): "CONFLICTING",
             ("DATETIME", "FLOAT"): "CONFLICTING",
+            ("DATETIME", "DATE"): "COMPATIBLE",  # DateTime can be truncated to Date
             ("DATETIME", "DATETIME"): "COMPATIBLE",
         }
 
@@ -428,6 +437,22 @@ class CompatibilityAnalyzer:
                 "description": "Float format validation",
             }
 
+        elif native == "STRING" and desired == "DATE":
+            # String to date needs date format validation
+            format_pattern = "YYYY-MM-DD"  # default
+            if desired_type_definition:
+                try:
+                    from shared.utils.type_parser import TypeParser
+
+                    parsed = TypeParser.parse_type_definition(desired_type_definition)
+                    format_pattern = parsed.get("format", format_pattern)
+                except Exception:
+                    pass  # use default if parsing fails
+            return "DATE_FORMAT", {
+                "format_pattern": format_pattern,
+                "description": "String date format validation",
+            }
+
         elif native == "STRING" and desired == "DATETIME":
             # String to datetime needs date format validation
             format_pattern = "YYYY-MM-DD"  # default
@@ -441,7 +466,23 @@ class CompatibilityAnalyzer:
                     pass  # use default if parsing fails
             return "DATE_FORMAT", {
                 "format_pattern": format_pattern,
-                "description": "String date format validation",
+                "description": "String datetime format validation",
+            }
+
+        elif native == "INTEGER" and desired == "DATE":
+            # Integer to date needs date format validation
+            format_pattern = "YYYYMMDD"  # default
+            if desired_type_definition:
+                try:
+                    from shared.utils.type_parser import TypeParser
+
+                    parsed = TypeParser.parse_type_definition(desired_type_definition)
+                    format_pattern = parsed.get("format", format_pattern)
+                except Exception:
+                    pass  # use default if parsing fails
+            return "DATE_FORMAT", {
+                "format_pattern": format_pattern,
+                "description": "Integer date format validation",
             }
 
         elif native == "INTEGER" and desired == "DATETIME":
@@ -457,7 +498,7 @@ class CompatibilityAnalyzer:
                     pass  # use default if parsing fails
             return "DATE_FORMAT", {
                 "format_pattern": format_pattern,
-                "description": "Integer date format validation",
+                "description": "Integer datetime format validation",
             }
 
         elif native == "FLOAT" and desired == "INTEGER":

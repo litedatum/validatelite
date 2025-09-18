@@ -57,6 +57,7 @@ def _register_sqlite_functions(dbapi_connection: Any, connection_record: Any) ->
         detect_invalid_float_precision,
         detect_invalid_integer_digits,
         detect_invalid_string_length,
+        is_valid_date,
     )
 
     try:
@@ -73,6 +74,11 @@ def _register_sqlite_functions(dbapi_connection: Any, connection_record: Any) ->
         # Register floating point precision validation function
         dbapi_connection.create_function(
             "DETECT_INVALID_FLOAT_PRECISION", 3, detect_invalid_float_precision
+        )
+
+        # Register date format validation function
+        dbapi_connection.create_function(
+            "IS_VALID_DATE", 2, is_valid_date
         )
 
         logger.debug("SQLite custom validation functions registered successfully")
@@ -246,8 +252,8 @@ async def get_engine(
                     pool_pre_ping=True,  # Enable connection health checks
                 )
 
-                # # Register event listener to register custom functions on each
-                #  connection establishment
+                # Register event listener to register custom functions on each
+                # connection establishment
                 event.listen(engine.sync_engine, "connect", _register_sqlite_functions)
             elif db_url.startswith(ConnectionType.CSV) or db_url.startswith(
                 ConnectionType.EXCEL

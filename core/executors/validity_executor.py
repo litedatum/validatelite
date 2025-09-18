@@ -316,60 +316,44 @@ class ValidityExecutor(BaseExecutor):
         self, rule: RuleSchema
     ) -> ExecutionResultSchema:
         """
-        Execute DATE_FORMAT rule, based on mature logic from
-        Rule._generate_date_format_sql
+        Execute DATE_FORMAT rule with database-specific strategies:
+        - MySQL: Uses STR_TO_DATE (existing implementation)
+        - PostgreSQL: Uses two-stage validation (regex + Python)
+        - SQLite: Uses custom functions
         """
         import time
 
         from shared.database.query_executor import QueryExecutor
         from shared.schema.base import DatasetMetrics
+        from shared.database.database_dialect import DatabaseType
 
         start_time = time.time()
         table_name = self._safe_get_table_name(rule)
 
         try:
-            # Check if date format is supported for this database. Some
-            # databases will raise an error for invalid date formats.
+            # Check if date format is supported for this database
             if not self.dialect.is_supported_date_format():
                 raise RuleExecutionError(
                     "DATE_FORMAT rule is not supported for this database"
                 )
 
-            # Generate validation SQL
-            sql = self._generate_date_format_sql(rule)
-
-            # Execute SQL and get result
+            # Get database engine and query executor
             engine = await self.get_engine()
             query_executor = QueryExecutor(engine)
 
-            # Get failed record count
-            result, _ = await query_executor.execute_query(sql)
-            failed_count = (
-                result[0]["anomaly_count"] if result and len(result) > 0 else 0
-            )
-
-            # Get total record count
-            filter_condition = rule.get_filter_condition()
-            total_sql = f"SELECT COUNT(*) as total_count FROM {table_name}"
-            if filter_condition:
-                total_sql += f" WHERE {filter_condition}"
-
-            total_result, _ = await query_executor.execute_query(total_sql)
-            total_count = (
-                total_result[0]["total_count"]
-                if total_result and len(total_result) > 0
-                else 0
-            )
+            # Database-specific execution strategies
+            if self.dialect.database_type == DatabaseType.POSTGRESQL:
+                failed_count, total_count, sample_data = await self._execute_postgresql_date_format(rule, query_executor)
+            elif self.dialect.database_type == DatabaseType.SQLITE:
+                failed_count, total_count, sample_data = await self._execute_sqlite_date_format(rule, query_executor, engine)
+            else:
+                # MySQL and other databases use the original implementation
+                failed_count, total_count, sample_data = await self._execute_standard_date_format(rule, query_executor)
 
             execution_time = time.time() - start_time
 
             # Build standardized result
             status = "PASSED" if failed_count == 0 else "FAILED"
-
-            # Generate sample data (only on failure)
-            sample_data = None
-            if failed_count > 0:
-                sample_data = await self._generate_sample_data(rule, sql)
 
             # Build dataset metrics
             dataset_metric = DatasetMetrics(
@@ -393,14 +377,13 @@ class ValidityExecutor(BaseExecutor):
                 error_message=None,
                 sample_data=sample_data,
                 cross_db_metrics=None,
-                execution_plan={"sql": sql, "execution_type": "single_table"},
+                execution_plan={"execution_type": f"{self.dialect.database_type.value}_date_format"},
                 started_at=datetime.fromtimestamp(start_time),
                 ended_at=datetime.fromtimestamp(time.time()),
             )
 
         except Exception as e:
             # Use unified error handling method
-            # - distinguish engine-level and rule-level errors
             return await self._handle_execution_error(e, rule, start_time, table_name)
 
     def _generate_range_sql(self, rule: RuleSchema) -> str:
@@ -585,6 +568,226 @@ class ValidityExecutor(BaseExecutor):
             where_clause += f" AND ({filter_condition})"
 
         return f"SELECT COUNT(*) AS anomaly_count FROM {table} {where_clause}"
+
+    async def _execute_postgresql_date_format(self, rule: RuleSchema, query_executor) -> tuple[int, int, list]:
+        """Execute PostgreSQL two-stage date format validation"""
+        from datetime import datetime
+        from typing import cast
+        from shared.database.database_dialect import PostgreSQLDialect
+
+        postgres_dialect = cast(PostgreSQLDialect, self.dialect)
+        table_name = self._safe_get_table_name(rule)
+        column = self._safe_get_column_name(rule)
+        format_pattern = self._get_format_pattern(rule)
+        filter_condition = rule.get_filter_condition()
+
+        # Stage 1: Get regex-based failures and candidates for Python validation
+        stage1_sql, stage2_sql = postgres_dialect.get_two_stage_date_validation_sql(
+            column, format_pattern, table_name, filter_condition
+        )
+
+        # Execute stage 1: get regex failures
+        stage1_result, _ = await query_executor.execute_query(stage1_sql)
+        regex_failed_count = stage1_result[0]["regex_failed_count"] if stage1_result else 0
+
+        # Execute stage 2: get candidates for Python validation
+        stage2_result, _ = await query_executor.execute_query(stage2_sql)
+        candidates = [row[column] for row in stage2_result] if stage2_result else []
+
+        # Stage 3: Python validation for semantic correctness
+        python_failed_candidates = []
+        normalized_pattern = self._normalize_format_pattern(format_pattern)
+
+        for candidate in candidates:
+            if candidate and not self._validate_date_in_python(candidate, normalized_pattern):
+                python_failed_candidates.append(candidate)
+
+        # Stage 4: Count records with Python-detected failures
+        python_failed_count = 0
+        if python_failed_candidates:
+            # Build SQL to count records with semantically invalid dates
+            escaped_candidates = [candidate.replace("'", "''") for candidate in python_failed_candidates]
+            values_list = "', '".join(escaped_candidates)
+            python_count_where = f"WHERE {column} IN ('{values_list}')"
+            if filter_condition:
+                python_count_where += f" AND ({filter_condition})"
+
+            python_count_sql = f"SELECT COUNT(*) as python_failed_count FROM {table_name} {python_count_where}"
+            python_result, _ = await query_executor.execute_query(python_count_sql)
+            python_failed_count = python_result[0]["python_failed_count"] if python_result else 0
+
+        # Get total record count
+        total_sql = f"SELECT COUNT(*) as total_count FROM {table_name}"
+        if filter_condition:
+            total_sql += f" WHERE {filter_condition}"
+        total_result, _ = await query_executor.execute_query(total_sql)
+        total_count = total_result[0]["total_count"] if total_result else 0
+
+        # Generate sample data
+        sample_data = None
+        total_failed = regex_failed_count + python_failed_count
+        if total_failed > 0:
+            sample_data = await self._generate_postgresql_sample_data(
+                rule, query_executor, python_failed_candidates
+            )
+
+        return total_failed, total_count, sample_data
+
+    async def _execute_sqlite_date_format(self, rule: RuleSchema, query_executor, engine) -> tuple[int, int, list]:
+        """Execute SQLite date format validation with custom functions"""
+        from typing import cast
+        from shared.database.database_dialect import SQLiteDialect
+
+        sqlite_dialect = cast(SQLiteDialect, self.dialect)
+        table_name = self._safe_get_table_name(rule)
+        format_pattern = self._get_format_pattern(rule)
+
+        # Custom date validation function is automatically registered via SQLAlchemy event listener
+        # in shared/database/connection.py - no manual registration needed
+
+        # Use the custom function for validation
+        sql = self._generate_date_format_sql(rule)
+
+        # Execute SQL and get result
+        result, _ = await query_executor.execute_query(sql)
+        failed_count = result[0]["anomaly_count"] if result and len(result) > 0 else 0
+
+        # Get total record count
+        filter_condition = rule.get_filter_condition()
+        total_sql = f"SELECT COUNT(*) as total_count FROM {table_name}"
+        if filter_condition:
+            total_sql += f" WHERE {filter_condition}"
+        total_result, _ = await query_executor.execute_query(total_sql)
+        total_count = total_result[0]["total_count"] if total_result else 0
+
+        # Generate sample data
+        sample_data = None
+        if failed_count > 0:
+            sample_data = await self._generate_sample_data(rule, sql)
+
+        return failed_count, total_count, sample_data
+
+    async def _execute_standard_date_format(self, rule: RuleSchema, query_executor) -> tuple[int, int, list]:
+        """Execute standard date format validation (MySQL and others)"""
+        # Original implementation for MySQL and other databases
+        sql = self._generate_date_format_sql(rule)
+
+        # Execute SQL and get result
+        result, _ = await query_executor.execute_query(sql)
+        failed_count = result[0]["anomaly_count"] if result and len(result) > 0 else 0
+
+        # Get total record count
+        table_name = self._safe_get_table_name(rule)
+        filter_condition = rule.get_filter_condition()
+        total_sql = f"SELECT COUNT(*) as total_count FROM {table_name}"
+        if filter_condition:
+            total_sql += f" WHERE {filter_condition}"
+        total_result, _ = await query_executor.execute_query(total_sql)
+        total_count = total_result[0]["total_count"] if total_result else 0
+
+        # Generate sample data
+        sample_data = None
+        if failed_count > 0:
+            sample_data = await self._generate_sample_data(rule, sql)
+
+        return failed_count, total_count, sample_data
+
+    def _validate_date_in_python(self, date_str: str, format_pattern: str) -> bool:
+        """Validate date string in Python for semantic correctness"""
+        from datetime import datetime
+
+        try:
+            # Parse date using the specified format
+            parsed_date = datetime.strptime(date_str, format_pattern)
+            # Round-trip validation to catch semantic errors like 2000-02-31
+            return parsed_date.strftime(format_pattern) == date_str
+        except (ValueError, TypeError):
+            return False
+
+    def _get_format_pattern(self, rule: RuleSchema) -> str:
+        """Extract format pattern from rule parameters"""
+        params = rule.parameters if hasattr(rule, "parameters") else {}
+        format_pattern = (
+            params.get("format_pattern")
+            or params.get("format")
+            or rule.get_rule_config().get("format_pattern")
+            or rule.get_rule_config().get("format")
+        )
+
+        if not format_pattern:
+            raise RuleExecutionError("DATE_FORMAT rule requires format_pattern")
+
+        return format_pattern
+
+    def _normalize_format_pattern(self, format_pattern: str) -> str:
+        """Normalize format pattern for Python datetime"""
+        # Handle both case variations (YYYY/yyyy, MM/mm, etc.)
+        pattern_map = {
+            'YYYY': '%Y', 'yyyy': '%Y',
+            'MM': '%m', 'mm': '%m',
+            'DD': '%d', 'dd': '%d',
+            'HH': '%H', 'hh': '%H',
+            'MI': '%M', 'mi': '%M',
+            'SS': '%S', 'ss': '%S',
+        }
+
+        normalized = format_pattern
+        # Sort by length (descending) to avoid partial replacements
+        for fmt in sorted(pattern_map.keys(), key=len, reverse=True):
+            normalized = normalized.replace(fmt, pattern_map[fmt])
+
+        return normalized
+
+    async def _generate_postgresql_sample_data(self, rule: RuleSchema, query_executor, python_failed_candidates: list) -> list:
+        """Generate sample data for PostgreSQL date format failures"""
+        try:
+            from core.config import get_core_config
+
+            try:
+                core_config = get_core_config()
+                max_samples = core_config.sample_data_max_records if core_config.sample_data_max_records else 5
+            except Exception:
+                max_samples = 5
+
+            table_name = self._safe_get_table_name(rule)
+            column = self._safe_get_column_name(rule)
+            format_pattern = self._get_format_pattern(rule)
+            filter_condition = rule.get_filter_condition()
+
+            # Get sample data from both regex failures and Python failures
+            from typing import cast
+            from shared.database.database_dialect import PostgreSQLDialect
+
+            postgres_dialect = cast(PostgreSQLDialect, self.dialect)
+            regex_pattern = postgres_dialect._format_pattern_to_regex(format_pattern)
+
+            # Sample data from regex failures
+            regex_sample_where = f"WHERE {column} IS NOT NULL AND {column} !~ '{regex_pattern}'"
+            if filter_condition:
+                regex_sample_where += f" AND ({filter_condition})"
+
+            regex_sample_sql = f"SELECT * FROM {table_name} {regex_sample_where} LIMIT {max_samples // 2}"
+            regex_samples, _ = await query_executor.execute_query(regex_sample_sql)
+
+            # Sample data from Python failures
+            python_samples = []
+            if python_failed_candidates:
+                escaped_candidates = [candidate.replace("'", "''") for candidate in python_failed_candidates[:max_samples // 2]]
+                values_list = "', '".join(escaped_candidates)
+                python_sample_where = f"WHERE {column} IN ('{values_list}')"
+                if filter_condition:
+                    python_sample_where += f" AND ({filter_condition})"
+
+                python_sample_sql = f"SELECT * FROM {table_name} {python_sample_where} LIMIT {max_samples // 2}"
+                python_samples, _ = await query_executor.execute_query(python_sample_sql)
+
+            # Combine samples
+            all_samples = (regex_samples or []) + (python_samples or [])
+            return all_samples[:max_samples]
+
+        except Exception as e:
+            self.logger.warning(f"Failed to generate PostgreSQL sample data: {e}")
+            return None
 
     def _generate_date_format_sql(self, rule: RuleSchema) -> str:
         """

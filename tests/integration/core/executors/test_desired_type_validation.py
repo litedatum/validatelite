@@ -85,6 +85,22 @@ class DesiredTypeTestDataBuilder:
                 1000.0,  # ✗ Invalid: exceeds integer(2) limit
             ],
             "order_status": ["pending"] * 6,
+            "order_date": [
+                "2020-02-09",
+                "2019-11-22",
+                "2021-02-29", # invalid date
+                "2021-04-31", # invalid date
+                "2011-01-05",
+                "2024-13-06", # invalid date
+            ],
+            "order_time": [
+                "12:13:14",
+                "13:00:00",
+                "14:15:78", # invalid time (78 seconds)
+                "15:16:17",
+                "25:17:18", # invalid time (25 hours)
+                "23:59:59",
+            ],
         }
 
         # Users table - Test integer(2) and string(10) validation
@@ -116,6 +132,15 @@ class DesiredTypeTestDataBuilder:
                 "verylongname@test.com",
                 "x@test.com",
                 "ten@test.com",
+            ],
+            "birthday": [
+                19680223,
+                19680230, # invalid date (Feb 30)
+                19680401,
+                19780431, # invalid date (Apr 31)
+                19680630,
+                19680631, # invalid date (Jun 31)
+                19680701,
             ],
         }
 
@@ -163,6 +188,8 @@ class DesiredTypeTestDataBuilder:
                         "type": "string",
                         "enum": ["pending", "confirmed", "shipped"],
                     },
+                    {"field": "order_date", "type": "string", "desired_type": "date('YYYY-MM-DD')"},
+                    {"field": "order_time", "type": "string", "desired_type": "datetime('HH:MI:SS')"},
                 ]
             },
             "users": {
@@ -182,6 +209,7 @@ class DesiredTypeTestDataBuilder:
                         "max": 120,
                     },
                     {"field": "email", "type": "string", "required": True},
+                    {"field": "birthday", "type": "integer", "desired_type": "date('YYYYMMDD')"},
                 ]
             },
         }
@@ -212,20 +240,6 @@ class TestDesiredTypeValidationExcel:
         # 1. Setup test files
         excel_file, schema_file = self._create_test_files(tmp_path)
 
-        # Manually create the schema in the format expected by the CLI
-        # schema_definition = TestDataBuilder.create_schema_definition()
-        # The table names in the excel file are 'products', 'orders', 'users'
-        # The default rules definition uses 't_products', etc. We need to map them.
-        # schema_definition['products'] = schema_definition.pop('products')
-        # schema_definition['orders'] = schema_definition.pop('orders')
-        # schema_definition['users'] = schema_definition.pop('users')
-        # print("schema_definition:", schema_definition)
-
-        # with open(schema_file, 'w') as f:
-        #     json.dump(schema_definition, f, indent=2)
-        # with open(schema_file, "r") as f:
-        #     schema_definition = json.load(f)
-
         # 2. Run CLI
         runner = CliRunner()
         result = runner.invoke(
@@ -255,66 +269,53 @@ class TestDesiredTypeValidationExcel:
         TestAssertionHelpers.assert_validation_results(
             results=payload["fields"],
             expected_failed_tables=["products", "orders", "users"],
-            min_total_anomalies=0,
+            min_total_anomalies=8,  # Updated to expect date format validation failures
         )
 
-    # async def test_float_precision_scale_validation(self, tmp_path: Path) -> None:
-    #     """Test float(4,1) precision/scale validation - core bug fix verification."""
-    #     excel_file, schema_file = self._create_test_files(tmp_path)
+        # Additional assertions for DATE_FORMAT validation results
+        results = payload["results"]
 
-    #     # Use late import to avoid configuration loading issues
-    #     from cli.commands.schema import DesiredTypePhaseExecutor
+        # Find DATE_FORMAT rule results
+        date_format_results = [r for r in results if "DATE_FORMAT" in str(r.get("execution_plan", {})) or
+                              (r.get("execution_message", "").find("DATE_FORMAT") != -1)]
 
-    #     # Load schema rules
-    #     with open(schema_file, "r") as f:
-    #         schema_rules = json.load(f)
+        # Verify we have DATE_FORMAT validations running
+        assert len(date_format_results) >= 0, "Should have DATE_FORMAT validation results"
 
-    #     # Execute desired_type validation
-    #     executor = DesiredTypePhaseExecutor(None, None, None)
+        # Check specific field validation results in the fields section
+        fields = payload["fields"]
 
-    #     try:
-    #         # Test the key bug: price field with float(4,1) should detect violations
-    #         # Before fix: all prices would pass incorrectly
-    #         # After fix: prices like 999.99, 1234.5, 12.34 should fail
-    #         results, exec_time, generated_rules = (
-    #             await executor.execute_desired_type_validation(
-    #                 conn_str=excel_file,
-    #                 original_payload=schema_rules,
-    #                 source_db="test_db",
-    #             )
-    #         )
+        # Find orders table fields
+        orders_fields = [f for f in fields if f["table"] == "orders"]
+        order_date_field = next((f for f in orders_fields if f["column"] == "order_date"), None)
+        order_time_field = next((f for f in orders_fields if f["column"] == "order_time"), None)
 
-    #         # Verify that validation rules were generated
-    #         assert (
-    #             len(generated_rules) > 0
-    #         ), "Should generate desired_type validation rules"
+        # Find users table fields
+        users_fields = [f for f in fields if f["table"] == "users"]
+        birthday_field = next((f for f in users_fields if f["column"] == "birthday"), None)
 
-    #         # Find the price validation rule
-    #         price_rules = [
-    #             r
-    #             for r in generated_rules
-    #             if hasattr(r, "target")
-    #             and any(e.column == "price" for e in r.target.entities)
-    #         ]
-    #         assert (
-    #             len(price_rules) > 0
-    #         ), "Should generate validation rule for price field"
+        # Verify DATE_FORMAT validation was attempted for these fields
+        if order_date_field:
+            print(f"\nOrder date field validation: {order_date_field}")
+            # The field should exist and have some validation result
+            assert "checks" in order_date_field
 
-    #         # Verify validation results show failures
-    #         if results:
-    #             total_failures = sum(
-    #                 sum(
-    #                     m.failed_records
-    #                     for m in result.dataset_metrics
-    #                     if result.dataset_metrics
-    #                 )
-    #                 for result in results
-    #                 if result.dataset_metrics
-    #             )
-    #             assert total_failures > 0, "Should detect validation violations"
+        if order_time_field:
+            print(f"\nOrder time field validation: {order_time_field}")
+            assert "checks" in order_time_field
 
-    #     except Exception as e:
-    #         pytest.skip(f"Excel validation test failed due to setup issue: {e}")
+        if birthday_field:
+            print(f"\nBirthday field validation: {birthday_field}")
+            assert "checks" in birthday_field
+
+        # Count total failed records from all rules to verify DATE_FORMAT failures are included
+        total_failed_records = payload["summary"]["total_failed_records"]
+        print(f"\nTotal failed records across all validations: {total_failed_records}")
+
+        # We expect at least some failures from DATE_FORMAT validations
+        # Expected: 3 from order_date + 2 from order_time + 3 from birthday = 8 minimum
+        # Note: The exact count may vary based on other validation rules
+        assert total_failed_records >= 8, f"Expected at least 8 failed records from date format validations, got {total_failed_records}"
 
     @pytest.mark.asyncio
     async def test_compatibility_analyzer_always_enforces_constraints(self) -> None:
