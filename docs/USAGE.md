@@ -110,6 +110,7 @@ ValidateLite supports multiple data source types:
 | **Validity** | `regex`, `date_format`, `enum` | Check data format and values |
 | **Consistency** | `range`, `length` | Check data bounds and constraints |
 | **Schema** | `schema` (auto-generated) | Check field existence and types |
+| **Desired Type** | `desired_type` (soft validation) | **NEW**: Check data compatibility for type conversion |
 
 ---
 
@@ -416,6 +417,46 @@ _Only applicable to CSV file data sources_
 }
 ```
 
+**NEW in v0.5.0: Desired Type Validation Format:**
+```json
+{
+  "transactions": {
+    "rules": [
+      {
+        "field": "id",
+        "type": "string",
+        "desired_type": "integer",
+        "required": true
+      },
+      {
+        "field": "amount",
+        "type": "string(255)",
+        "desired_type": "float(10,2)",
+        "required": true
+      },
+      {
+        "field": "transaction_date",
+        "type": "string",
+        "desired_type": "datetime('%Y-%m-%d %H:%i:%s')"
+      },
+      {
+        "field": "description",
+        "type": "string(500)",
+        "desired_type": "string(200)"
+      },
+      {
+        "field": "status",
+        "type": "string",
+        "desired_type": "string",
+        "enum": ["pending", "completed", "failed"]
+      }
+    ],
+    "strict_mode": true,
+    "case_insensitive": false
+  }
+}
+```
+
 **Supported Field Types:**
 - `string`, `integer`, `float`, `boolean`, `date`, `datetime`
 
@@ -428,6 +469,7 @@ _Only applicable to CSV file data sources_
 - `max_length` - Maximum string length validation (string types only) - **New in v0.4.3**
 - `precision` - Numeric precision validation (float types only) - **New in v0.4.3**
 - `scale` - Numeric scale validation (float types only) - **New in v0.4.3**
+- `desired_type` - Soft validation target type with compatibility checking - **New in v0.5.0**
 - `strict_mode` - Report extra columns as violations (table-level option)
 - `case_insensitive` - Case-insensitive column matching (table-level option)
 
@@ -440,6 +482,17 @@ ValidateLite now supports **metadata validation** for precise schema enforcement
 - **Float Precision Validation**: Validate `precision` and `scale` for decimal columns against database DECIMAL/NUMERIC constraints
 - **Database-Agnostic**: Works across MySQL, PostgreSQL, and SQLite with vendor-specific type parsing
 - **Performance Optimized**: Uses database catalog queries, not data scans for validation
+
+**New in v0.5.0: Desired Type Validation**
+
+ValidateLite now supports **soft validation** through the `desired_type` field, enabling data type compatibility checking and automatic conversion validation.
+
+**Desired Type Validation Features:**
+- **Type Compatibility Analysis**: Automatically determines if native database types are compatible with desired target types
+- **Smart Skip Logic**: Skips validation when types are already compatible, optimizing performance
+- **Conversion Validation**: Validates data content for incompatible type conversions (e.g., string-to-integer)
+- **Conflict Detection**: Identifies impossible type conversions (e.g., datetime-to-integer) and reports errors
+- **Two-Phase Execution**: Performs schema validation first, then desired type validation only when needed
 
 #### New in v0.4.2: Multi-Table and Excel Support
 
@@ -500,10 +553,67 @@ Enhanced Schema Field → Generated Rules + Metadata
 
 **Key Enhancement**: Metadata validation (max_length, precision, scale) is performed by the SCHEMA rule using database catalog information, providing superior performance compared to data-scanning approaches.
 
+#### Desired Type Validation Logic
+
+**Compatibility Analysis:**
+ValidateLite performs intelligent compatibility analysis between native database types and desired types:
+
+| Native Type | Desired Type | Compatibility | Validation Method |
+|-------------|--------------|---------------|------------------|
+| `string(100)` | `string(50)` | INCOMPATIBLE | LENGTH rule (max: 50) |
+| `string` | `integer` | INCOMPATIBLE | REGEX rule (numeric pattern) |
+| `string` | `float(10,2)` | INCOMPATIBLE | REGEX rule (decimal pattern) |
+| `string` | `datetime('format')` | INCOMPATIBLE | DATE_FORMAT rule |
+| `integer` | `float` | COMPATIBLE | Skip validation |
+| `integer` | `string` | COMPATIBLE | Skip validation |
+| `datetime` | `integer` | CONFLICTING | Report error immediately |
+
+**Validation Flow:**
+1. **Phase 1**: Schema validation - Check field existence and native types
+2. **Compatibility Analysis**: Compare native vs desired types
+3. **Phase 2**: Desired type validation - Only for INCOMPATIBLE cases
+4. **Result Merging**: Combine both phases with intelligent prioritization
+
+**Performance Benefits:**
+- **Smart Skip Logic**: Compatible conversions are automatically skipped
+- **Batch Execution**: Incompatible validations are executed together
+- **Early Exit**: Conflicting conversions fail immediately without data scanning
+
+#### When to Use Desired Type Validation
+
+**Common Use Cases:**
+- **Data Migration**: Validate that existing string data can be converted to numeric types before migration
+- **Legacy System Integration**: Ensure data compatibility when moving from loosely-typed to strongly-typed systems
+- **ETL Pipeline Validation**: Pre-validate data transformations before expensive processing
+- **Data Quality Assessment**: Identify data quality issues that prevent type conversions
+
+**Example Scenarios:**
+```json
+// Scenario 1: Legacy CSV data with string IDs that should be integers
+{ "field": "customer_id", "type": "string", "desired_type": "integer" }
+
+// Scenario 2: Financial data stored as strings that need decimal precision
+{ "field": "amount", "type": "string", "desired_type": "float(10,2)" }
+
+// Scenario 3: Date strings that need consistent datetime format
+{ "field": "created_at", "type": "string", "desired_type": "datetime('%Y-%m-%d')" }
+
+// Scenario 4: Data size reduction validation
+{ "field": "description", "type": "string(500)", "desired_type": "string(200)" }
+```
+
+**Benefits:**
+- **Risk Mitigation**: Identify conversion issues before data processing
+- **Performance Optimization**: Skip unnecessary validations for compatible types
+- **Data Quality Insights**: Understand the feasibility of schema changes
+- **Migration Planning**: Assess data cleanup requirements before migration
+
 **Execution Priority & Skip Logic:**
 1. **Field Missing** → Report FIELD_MISSING, skip all other checks for that field
 2. **Type Mismatch** → Report TYPE_MISMATCH, skip dependent checks (NOT_NULL, RANGE, ENUM)
-3. **All Other Rules** → Execute normally if field exists and type matches
+3. **Desired Type Conflicts** → Report CONFLICTING_CONVERSION, skip desired type validation
+4. **Compatible Conversions** → Skip desired type validation (performance optimization)
+5. **All Other Rules** → Execute normally if field exists and type matches
 
 #### Output Formats
 
@@ -627,6 +737,27 @@ vlite schema --conn "postgresql://user:pass@host:5432/finance" \
 vlite schema --conn "sqlite:///data/app.db" \
   --rules mixed_metadata_schema.json \
   --output json
+```
+
+**7. New in v0.5.0: Desired type validation examples:**
+```bash
+# Validate string-to-numeric conversions
+vlite schema --conn "mysql://user:pass@host:3306/sales" \
+  --rules string_to_numeric_schema.json
+
+# Validate mixed data type transformations
+vlite schema --conn "postgresql://user:pass@host:5432/warehouse" \
+  --rules data_migration_schema.json \
+  --verbose
+
+# Legacy data cleanup validation
+vlite schema --conn "data/legacy_export.csv" \
+  --rules legacy_cleanup_schema.json \
+  --output json
+
+# Multi-table desired type validation
+vlite schema --conn "sqlite:///migration.db" \
+  --rules multi_table_desired_types.json
 ```
 
 #### Exit Codes
