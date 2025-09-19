@@ -2621,12 +2621,21 @@ def _emit_table_output(
     help="Return exit code 1 if any error occurs during execution",
 )
 @click.option("--verbose", is_flag=True, default=False, help="Enable verbose output")
+@click.option(
+    "--table",
+    "table_name",
+    help=(
+        "Table name (optional for single-table validation, takes precedence "
+        "when JSON has no table names)"
+    ),
+)
 def schema_command(
     connection_string: str,
     rules_file: str,
     output: str,
     fail_on_error: bool,
     verbose: bool,
+    table_name: Optional[str],
 ) -> None:
     """
     Schema validation command with support for both single-table
@@ -2640,10 +2649,14 @@ def schema_command(
         _maybe_echo_analyzing(connection_string, output)
         _guard_empty_source_file(connection_string)
 
-        source_config = SourceParser().parse_source(connection_string)
+        # Load rules first to determine if we should use --table parameter
         rules_payload = _read_rules_payload(rules_file)
-
         is_multi_table_rules = "rules" not in rules_payload
+
+        # Use --table parameter only for single-table format
+        #  (when JSON has no table names)
+        table_for_parser = None if is_multi_table_rules else table_name
+        source_config = SourceParser().parse_source(connection_string, table_for_parser)
         if is_multi_table_rules:
             source_config.parameters["is_multi_table"] = True
 

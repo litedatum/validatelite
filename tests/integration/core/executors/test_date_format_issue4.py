@@ -33,11 +33,14 @@ class TestDateFormatPatternSupport:
 
         # Test various format patterns with case variations
         test_cases = [
-            ("YYYY-MM-DD", r"^\\d{4}-\\d{2}-\\d{2}$"),
-            ("yyyy-mm-dd", r"^\\d{4}-\\d{2}-\\d{2}$"),
-            ("MM/DD/YYYY", r"^\\d{2}/\\d{2}/\\d{4}$"),
-            ("DD.MM.yyyy", r"^\\d{2}.\\d{2}.\\d{4}$"),
-            ("YYYY-MM-DD HH:MI:SS", r"^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$"),
+            ("YYYY-MM-DD", r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"),
+            ("yyyy-mm-dd", r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"),
+            ("MM/DD/YYYY", r"^[0-9]{2}/[0-9]{2}/[0-9]{4}$"),
+            ("DD.MM.yyyy", r"^[0-9]{2}.[0-9]{2}.[0-9]{4}$"),
+            (
+                "YYYY-MM-DD HH:MI:SS",
+                r"^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$",
+            ),
         ]
 
         for format_pattern, expected_regex in test_cases:

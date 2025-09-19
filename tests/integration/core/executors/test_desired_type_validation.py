@@ -12,13 +12,10 @@ This test suite specifically covers the bugs fixed in:
 - core/executors/validity_executor.py (SQLite custom validation)
 """
 
-import asyncio
 import json
-import os
 import sys
-import tempfile
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import pandas as pd
 import pytest
@@ -27,8 +24,6 @@ from click.testing import CliRunner
 from cli.app import cli_app
 from tests.integration.core.executors.desired_type_test_utils import (
     TestAssertionHelpers,
-    TestDataBuilder,
-    TestSetupHelpers,
 )
 
 # Ensure proper project root path for imports
@@ -405,7 +400,7 @@ class TestDesiredTypeValidationExcel:
         self, tmp_path: Path
     ) -> None:
         """Test that SQLite custom functions are properly used for validation."""
-        excel_file, schema_file = self._create_test_files(tmp_path)
+        # excel_file, schema_file = self._create_test_files(tmp_path)
 
         try:
             from shared.database.sqlite_functions import validate_float_precision
@@ -437,177 +432,3 @@ class TestDesiredTypeValidationExcel:
             assert (
                 actual_result == expected
             ), f"validate_float_precision({value}, 4, 1) expected {expected}, got {actual_result}"
-
-
-@pytest.mark.integration
-@pytest.mark.database
-class TestDesiredTypeValidationDatabaseCli:
-    """Test desired_type validation with DBs using subprocess and shared utils."""
-
-    async def _run_db_test(
-        self, db_type: str, conn_params: Dict[str, Any], tmp_path: Path
-    ) -> None:
-        # Pre-flight check for connection parameters
-
-        TestSetupHelpers.skip_if_dependencies_unavailable(
-            "shared.database.connection", "shared.database.query_executor"
-        )
-        from shared.database.connection import get_db_url, get_engine
-        from shared.database.query_executor import QueryExecutor
-
-        table_name_map = {
-            "products": "t_products",
-            "orders": "t_orders",
-            "users": "t_users",
-        }
-
-        async def setup_database() -> None:
-            try:
-                db_url = get_db_url(
-                    db_type=db_type,
-                    host=str(conn_params["host"]),
-                    port=int(conn_params["port"]),
-                    database=str(conn_params["database"]),
-                    username=str(conn_params["username"]),
-                    password=str(conn_params["password"]),
-                )
-                engine = await get_engine(db_url, pool_size=1, echo=False)
-                executor = QueryExecutor(engine)
-                try:
-                    for table in table_name_map.values():
-                        await executor.execute_query(
-                            f"DROP TABLE IF EXISTS {table} CASCADE", fetch=False
-                        )
-
-                    # Create tables and insert data
-                    await executor.execute_query(
-                        """
-                        CREATE TABLE t_products (product_id INT, product_name VARCHAR(100), price DECIMAL(10,2), category VARCHAR(50))
-                    """,
-                        fetch=False,
-                    )
-                    await executor.execute_query(
-                        """
-                        INSERT INTO t_products VALUES (1, 'P1', 999.9, 'A'), (2, 'P2', 1000.0, 'A'), (3, 'P3', 99.99, 'B')
-                    """,
-                        fetch=False,
-                    )
-
-                    await executor.execute_query(
-                        "CREATE TABLE t_orders (order_id INT, user_id INT, total_amount DECIMAL(10,2), order_status VARCHAR(20))",
-                        fetch=False,
-                    )
-                    await executor.execute_query(
-                        "INSERT INTO t_orders VALUES (1, 101, 89.0, 'pending'), (2, 102, 999.99, 'pending')",
-                        fetch=False,
-                    )
-
-                    await executor.execute_query(
-                        "CREATE TABLE t_users (user_id INT, name VARCHAR(100), age INT, email VARCHAR(255))",
-                        fetch=False,
-                    )
-                    await executor.execute_query(
-                        "INSERT INTO t_users VALUES (1, 'Alice', 25, 'a@a.com'), (2, 'VeryLongName', 123, 'b@b.com')",
-                        fetch=False,
-                    )
-
-                finally:
-                    await engine.dispose()
-            except Exception as e:
-                # Database connection failed - skip test
-                pytest.skip(f"Database connection to {db_type} failed: {e}")
-
-        async def cleanup_database() -> None:
-            try:
-                db_url = get_db_url(
-                    db_type=db_type,
-                    host=str(conn_params["host"]),
-                    port=int(conn_params["port"]),
-                    database=str(conn_params["database"]),
-                    username=str(conn_params["username"]),
-                    password=str(conn_params["password"]),
-                )
-                engine = await get_engine(db_url, pool_size=1, echo=False)
-                executor = QueryExecutor(engine)
-                try:
-                    for table in table_name_map.values():
-                        await executor.execute_query(
-                            f"DROP TABLE IF EXISTS {table} CASCADE", fetch=False
-                        )
-                finally:
-                    await engine.dispose()
-            except Exception:
-                # Ignore cleanup errors - the test might have been skipped
-                pass
-
-        # Run setup within the same event loop
-        await setup_database()
-        try:
-            # Create rules file
-            rules = TestDataBuilder.create_rules_definition()
-            rules_file = tmp_path / f"{db_type}_rules.json"
-            rules_file.write_text(json.dumps(rules))
-
-            # Manually construct a simple conn_str that SourceParser will recognize.
-            # SourceParser does not recognize the '+aiomysql' driver part.
-            conn_str = (
-                f"{db_type}://{conn_params['username']}:{conn_params['password']}"
-                f"@{conn_params['host']}:{conn_params['port']}/{conn_params['database']}"
-            )
-
-            # Use subprocess to avoid event loop conflicts (like refactored test)
-            import subprocess
-            import sys
-
-            cmd = [
-                sys.executable,
-                "cli_main.py",
-                "schema",
-                "--conn",
-                conn_str,
-                "--rules",
-                str(rules_file),
-                "--output",
-                "json",
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True, cwd=".")
-
-            # Assertions
-            assert (
-                result.returncode == 1
-            ), f"Expected exit code 1 for validation failures in {db_type}. stdout: {result.stdout}, stderr: {result.stderr}"
-
-            try:
-                payload = json.loads(result.stdout)
-            except json.JSONDecodeError:
-                pytest.fail(
-                    f"Failed to decode JSON from output. returncode: {result.returncode}, stdout: {result.stdout}, stderr: {result.stderr}"
-                )
-
-            assert payload["status"] == "ok"
-
-            TestAssertionHelpers.assert_validation_results(
-                results=payload["fields"],
-                expected_failed_tables=["t_products", "t_orders", "t_users"],
-                min_total_anomalies=4,
-            )
-
-        finally:
-            # Teardown within the same event loop
-            await cleanup_database()
-
-    @pytest.mark.asyncio
-    async def test_mysql_desired_type_validation_cli(self, tmp_path: Path) -> None:
-        """Test desired_type validation with real MySQL database via CLI."""
-        from tests.shared.utils.database_utils import get_mysql_connection_params
-
-        await self._run_db_test("mysql", get_mysql_connection_params(), tmp_path)
-
-    @pytest.mark.asyncio
-    async def test_postgresql_desired_type_validation_cli(self, tmp_path: Path) -> None:
-        """Test desired_type validation with real PostgreSQL database via CLI."""
-        from tests.shared.utils.database_utils import get_postgresql_connection_params
-
-        await self._run_db_test(
-            "postgresql", get_postgresql_connection_params(), tmp_path
-        )

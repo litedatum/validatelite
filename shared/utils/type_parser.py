@@ -229,6 +229,15 @@ class TypeParser:
                     f"not {type_value}"
                 )
 
+            # For DATE type, validate that format doesn't contain time components
+            if type_value == DataType.DATE.value:
+                format_str = parsed_type["format"]
+                time_indicators = ["h", "H", "m", "M", "s", "S", "a", "A", "p", "P"]
+                if any(indicator in format_str for indicator in time_indicators):
+                    raise TypeParseError(
+                        "format can only be specified for DATETIME type"
+                    )
+
     @classmethod
     def is_syntactic_sugar(cls, type_def: Union[str, Dict[str, Any]]) -> bool:
         """Check if a type definition uses syntactic sugar format."""

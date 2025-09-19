@@ -82,9 +82,9 @@ class SourceParser:
             elif source.startswith("file://"):
                 # Handle file:// protocol
                 file_path = source[7:]  # Remove file:// prefix
-                return self._parse_file_path(file_path)
+                return self._parse_file_path(file_path, table_name)
             elif self._is_file_path(source):
-                return self._parse_file_path(source)
+                return self._parse_file_path(source, table_name)
             else:
                 # Check if it is a directory
                 path = Path(source)
@@ -232,7 +232,9 @@ class SourceParser:
             cross_db_settings=None,
         )
 
-    def _parse_file_path(self, file_path: str) -> ConnectionSchema:
+    def _parse_file_path(
+        self, file_path: str, table_name: Optional[str] = None
+    ) -> ConnectionSchema:
         """Parse file path into connection configuration"""
         self.logger.debug(f"Parsing file path: {file_path}")
 
@@ -264,17 +266,32 @@ class SourceParser:
                         f"Multi-table Excel file detected with {len(sheets_info)} "
                         "sheets: {list(sheets_info.keys())}"
                     )
+            except ValidationError:
+                # Re-raise ValidationError (e.g., table validation errors)
+                raise
             except Exception as e:
                 self.logger.warning(
                     f"Could not read Excel sheets, treating as single-table: {str(e)}"
                 )
                 is_multi_table = False
 
+            # Validate table_name if provided for multi-table Excel (outside try-catch)
+            if is_multi_table and table_name and table_name not in sheets_info:
+                available_sheets = list(sheets_info.keys())
+                raise ValidationError(
+                    f"Table '{table_name}' not found in Excel file. "
+                    f"Available sheets: {available_sheets}"
+                )
+
         parameters = {
             "filename": path.name,
             "file_size": path.stat().st_size,
             "encoding": "utf-8",
         }
+
+        # Add table parameter if provided
+        if table_name:
+            parameters["table"] = table_name
 
         if is_multi_table and sheets_info:
             parameters["is_multi_table"] = True
