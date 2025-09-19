@@ -90,6 +90,39 @@ class DatabaseDialect(ABC):
         pass
 
     @abstractmethod
+    def generate_integer_regex_pattern(self, max_digits: int) -> str:
+        """Generate database-specific regex pattern for integer validation"""
+        pass
+
+    @abstractmethod
+    def generate_float_regex_pattern(self, precision: int, scale: int) -> str:
+        """Generate database-specific regex pattern for float validation"""
+        pass
+
+    @abstractmethod
+    def generate_basic_integer_pattern(self) -> str:
+        """Generate database-specific regex pattern for basic integer validation"""
+        pass
+
+    @abstractmethod
+    def generate_basic_float_pattern(self) -> str:
+        """Generate database-specific regex pattern for basic float validation"""
+        pass
+
+    @abstractmethod
+    def generate_integer_like_float_pattern(self) -> str:
+        """Generate regex pattern for integer-like float validation"""
+        pass
+
+    def cast_column_for_regex(self, column: str) -> str:
+        """Cast column to appropriate type for regex operations. Override if needed."""
+        return column  # Most databases don't need casting
+
+    def supports_regex(self) -> bool:
+        """Check if database supports regex operations. Override if needed."""
+        return True  # Most databases support regex
+
+    @abstractmethod
     def get_case_insensitive_like(self, column: str, pattern: str) -> str:
         """Get case-insensitive LIKE operator"""
         pass
@@ -237,7 +270,44 @@ class MySQLDialect(DatabaseDialect):
 
     def get_date_clause(self, column: str, format_pattern: str) -> str:
         """MySQL uses STR_TO_DATE for date formatting"""
-        return f"STR_TO_DATE({column}, '{format_pattern}')"
+        # Step 1: Convert pattern format to MySQL format specifiers
+        pattern = format_pattern
+        # Date components
+        pattern = pattern.replace("YYYY", "%Y")
+        pattern = pattern.replace("MM", "%m")
+        pattern = pattern.replace("DD", "%d")
+        # Time components
+        pattern = pattern.replace("HH", "%H")
+        pattern = pattern.replace("MI", "%i")  # MySQL uses %i for minutes
+        pattern = pattern.replace("SS", "%s")
+
+        pattern_len = len(format_pattern)
+        if "%Y" in format_pattern:
+            pattern_len = pattern_len - 2
+        # Step 2-4: Check for missing components and build postfix
+        postfix = ""
+
+        # Check for %Y, add if missing
+        if "%Y" not in pattern:
+            pattern += "%Y"
+            postfix += "2000"
+
+        # Check for %m, add if missing
+        if "%m" not in pattern:
+            pattern += "%m"
+            postfix += "01"
+
+        # Check for %d, add if missing
+        if "%d" not in pattern:
+            pattern += "%d"
+            postfix += "01"
+
+        # Step 5: Return the formatted STR_TO_DATE clause
+        return (
+            f"STR_TO_DATE("
+            f"CONCAT(LPAD({column}, {pattern_len}, '0'), '{postfix}'), "
+            f"'{pattern}')"
+        )
 
     def is_supported_date_format(self) -> bool:
         """MySQL supports date formats"""
@@ -309,6 +379,30 @@ class MySQLDialect(DatabaseDialect):
             f"{self.quote_identifier(table)}"
         )
         return sql, {}
+
+    def generate_integer_regex_pattern(self, max_digits: int) -> str:
+        """Generate MySQL-specific regex pattern for integer validation"""
+        return f"^-?[0-9]{{1,{max_digits}}}$"
+
+    def generate_float_regex_pattern(self, precision: int, scale: int) -> str:
+        """Generate MySQL-specific regex pattern for float validation"""
+        integer_digits = precision - scale
+        if scale > 0:
+            return f"^-?[0-9]{{1,{integer_digits}}}(\\.[0-9]{{1,{scale}}})?$"
+        else:
+            return f"^-?[0-9]{{1,{precision}}}\\.?0*$"
+
+    def generate_basic_integer_pattern(self) -> str:
+        """Generate MySQL-specific regex pattern for basic integer validation"""
+        return "^-?[0-9]+$"
+
+    def generate_basic_float_pattern(self) -> str:
+        """Generate MySQL-specific regex pattern for basic float validation"""
+        return "^-?[0-9]+(\\.[0-9]+)?$"
+
+    def generate_integer_like_float_pattern(self) -> str:
+        """Generate MySQL-specific regex pattern for integer-like float validation"""
+        return "^-?[0-9]+\\.0*$"
 
 
 class PostgreSQLDialect(DatabaseDialect):
@@ -402,12 +496,19 @@ class PostgreSQLDialect(DatabaseDialect):
         return f"LOWER({column}) LIKE LOWER('{pattern}')"
 
     def get_date_clause(self, column: str, format_pattern: str) -> str:
-        """PostgreSQL uses TO_TIMESTAMP for date formatting"""
-        return f"TO_TIMESTAMP({column}, '{format_pattern}')"
+        """PostgreSQL: Generate regex pattern for first-stage validation"""
+        # Convert format pattern to regex for PostgreSQL
+        regex_pattern = self._format_pattern_to_regex(format_pattern)
+        # Return condition that identifies invalid formats
+        #  (for COUNT in anomaly detection)
+        return (
+            f"CASE WHEN {column} IS NOT NULL AND {column} !~ '{regex_pattern}' "
+            f"THEN NULL ELSE 'valid' END"
+        )
 
     def is_supported_date_format(self) -> bool:
-        """PostgreSQL does not support date formats"""
-        return False
+        """PostgreSQL supports date formats with two-stage validation"""
+        return True
 
     def get_date_functions(self) -> Dict[str, str]:
         """Get PostgreSQL date functions"""
@@ -506,6 +607,127 @@ class PostgreSQLDialect(DatabaseDialect):
             params = {"table": table}
         return sql.strip(), params
 
+    def generate_integer_regex_pattern(self, max_digits: int) -> str:
+        """Generate PostgreSQL-specific regex pattern for integer validation"""
+        # PostgreSQL uses POSIX regex - use [0-9] instead of \\d
+        return f"^-?[0-9]{{1,{max_digits}}}$"
+
+    def generate_float_regex_pattern(self, precision: int, scale: int) -> str:
+        """Generate PostgreSQL-specific regex pattern for float validation"""
+        integer_digits = precision - scale
+        if scale > 0:
+            return f"^-?[0-9]{{1,{integer_digits}}}(\\.[0-9]{{1,{scale}}})?$"
+        else:
+            return f"^-?[0-9]{{1,{precision}}}\\.?0*$"
+
+    def generate_basic_integer_pattern(self) -> str:
+        """Generate PostgreSQL-specific regex pattern for basic integer validation"""
+        return "^-?[0-9]+$"
+
+    def generate_basic_float_pattern(self) -> str:
+        """Generate PostgreSQL-specific regex pattern for basic float validation"""
+        return "^-?[0-9]+(\\.([0-9]+)?)?$"
+
+    def generate_integer_like_float_pattern(self) -> str:
+        """Generate PostgreSQL regex pattern for integer-like float validation"""
+        return "^-?[0-9]+\\.0*$"
+
+    def _format_pattern_to_regex(self, format_pattern: str) -> str:
+        """Convert date format pattern to PostgreSQL regex pattern"""
+        # Handle both case variations (YYYY/yyyy, MM/mm, etc.)
+        # PostgreSQL uses POSIX regex - use [0-9] instead of \\d
+        pattern_map = {
+            "YYYY": r"[0-9]{4}",
+            "yyyy": r"[0-9]{4}",
+            "MM": r"[0-9]{2}",
+            "mm": r"[0-9]{2}",
+            "DD": r"[0-9]{2}",
+            "dd": r"[0-9]{2}",
+            "HH": r"[0-9]{2}",
+            "hh": r"[0-9]{2}",
+            "MI": r"[0-9]{2}",
+            "mi": r"[0-9]{2}",
+            "SS": r"[0-9]{2}",
+            "ss": r"[0-9]{2}",
+        }
+
+        regex = format_pattern
+        # Sort by length (descending) to avoid partial replacements
+        for fmt in sorted(pattern_map.keys(), key=len, reverse=True):
+            regex = regex.replace(fmt, pattern_map[fmt])
+
+        return f"^{regex}$"
+
+    def get_two_stage_date_validation_sql(
+        self,
+        column: str,
+        format_pattern: str,
+        table_name: str,
+        filter_condition: Optional[str] = None,
+    ) -> tuple[str, str]:
+        """Generate two-stage date validation SQL for PostgreSQL
+
+        Returns:
+            tuple: (stage1_sql, stage2_candidates_sql)
+        """
+        regex_pattern = self._format_pattern_to_regex(format_pattern)
+
+        # Stage 1: Count regex failures
+        # Cast column for regex operations to handle integer columns
+        cast_column = self.cast_column_for_regex(column)
+        where_clause = (
+            f"WHERE {column} IS NOT NULL AND {cast_column} !~ '{regex_pattern}'"
+        )
+        if filter_condition:
+            where_clause += f" AND ({filter_condition})"
+
+        stage1_sql = (
+            f"SELECT COUNT(1) as regex_failed_count "
+            f"FROM {table_name} {where_clause}"
+        )
+
+        # Stage 2: Get potential valid candidates for Python validation
+        candidates_where = (
+            f"WHERE {column} IS NOT NULL AND {cast_column} ~ '{regex_pattern}'"
+        )
+        if filter_condition:
+            candidates_where += f" AND ({filter_condition})"
+
+        stage2_sql = (
+            f"SELECT DISTINCT {column} FROM {table_name} {candidates_where} LIMIT 10000"
+        )
+
+        return stage1_sql, stage2_sql
+
+    def _normalize_format_pattern(self, format_pattern: str) -> str:
+        """Normalize format pattern for Python datetime validation"""
+        # Handle both case variations (YYYY/yyyy, MM/mm, etc.)
+        pattern_map = {
+            "YYYY": "%Y",
+            "yyyy": "%Y",
+            "MM": "%m",
+            "mm": "%m",
+            "DD": "%d",
+            "dd": "%d",
+            "HH": "%H",
+            "hh": "%H",
+            "MI": "%M",
+            "mi": "%M",
+            "SS": "%S",
+            "ss": "%S",
+        }
+
+        normalized = format_pattern
+        # Sort by length (descending) to avoid partial replacements
+        for fmt in sorted(pattern_map.keys(), key=len, reverse=True):
+            normalized = normalized.replace(fmt, pattern_map[fmt])
+
+        return normalized
+
+    def cast_column_for_regex(self, column: str) -> str:
+        """Cast column to text for regex operations in PostgreSQL"""
+        return f"{column}::text"
+
 
 class SQLiteDialect(DatabaseDialect):
     """SQLite dialect"""
@@ -581,22 +803,16 @@ class SQLiteDialect(DatabaseDialect):
         return f"{column} LIKE '{pattern}' COLLATE NOCASE"
 
     def get_date_clause(self, column: str, format_pattern: str) -> str:
-        """SQLite uses strftime for date formatting"""
-        fmt_map = {
-            "yyyy": "%Y",
-            "MM": "%m",
-            "dd": "%d",
-            "HH": "%H",
-            "mm": "%M",
-            "ss": "%S",
-        }
-        for k, v in fmt_map.items():
-            format_pattern = format_pattern.replace(k, v)
-        return f"strftime('{format_pattern}', {column})"
+        """SQLite uses custom function for date validation"""
+        # Use custom function for date validation
+        return (
+            f"CASE WHEN IS_VALID_DATE({column}, '{format_pattern}') THEN 'valid' "
+            f"ELSE NULL END"
+        )
 
     def is_supported_date_format(self) -> bool:
-        """SQLite does not support date formats"""
-        return False
+        """SQLite supports date formats with custom functions"""
+        return True
 
     def get_date_functions(self) -> Dict[str, str]:
         """Get SQLite date functions"""
@@ -653,6 +869,101 @@ class SQLiteDialect(DatabaseDialect):
         """Get SQLite column list"""
         sql = f"PRAGMA table_info({self.quote_identifier(table)})"
         return sql, {}
+
+    def generate_integer_regex_pattern(self, max_digits: int) -> str:
+        """Generate SQLite-specific regex pattern for integer validation"""
+        # SQLite REGEXP requires extension, but supports \d when available
+        return f"^-?\\d{{1,{max_digits}}}$"
+
+    def generate_float_regex_pattern(self, precision: int, scale: int) -> str:
+        """Generate SQLite-specific regex pattern for float validation"""
+        integer_digits = precision - scale
+        if scale > 0:
+            return f"^-?\\d{{1,{integer_digits}}}(\\.\\d{{1,{scale}}})?$"
+        else:
+            return f"^-?\\d{{1,{precision}}}\\.?0*$"
+
+    def generate_basic_integer_pattern(self) -> str:
+        """Generate SQLite-specific regex pattern for basic integer validation"""
+        return "^-?\\d+$"
+
+    def generate_basic_float_pattern(self) -> str:
+        """Generate SQLite-specific regex pattern for basic float validation"""
+        return "^-?\\d+(\\.\\d+)?$"
+
+    def generate_integer_like_float_pattern(self) -> str:
+        """Generate SQLite-specific regex pattern for integer-like float validation"""
+        return "^-?\\d+\\.0*$"
+
+    def build_full_table_name(self, database: str, table: str) -> str:
+        """Build full table name - SQLite does not use database prefix"""
+        return self.quote_identifier(table)
+
+    def supports_regex(self) -> bool:
+        """SQLite does not have built-in regex support"""
+        return False
+
+    def generate_custom_validation_condition(
+        self, validation_type: str, column: str, **params: Any
+    ) -> str:
+        """
+        Generate validation conditions using SQLite custom functions
+
+        Args:
+            validation_type: validation type
+              ('integer_digits', 'string_length', 'float_precision')
+            column: column name
+            **params: validation parameters
+
+        Returns:
+            SQL condition string for detecting failure cases in WHERE clause
+        """
+        if validation_type == "integer_digits":
+            max_digits = params.get("max_digits", 10)
+            return f"DETECT_INVALID_INTEGER_DIGITS({column}, {max_digits})"
+
+        elif validation_type == "string_length":
+            max_length = params.get("max_length", 255)
+            return f"DETECT_INVALID_STRING_LENGTH({column}, {max_length})"
+
+        elif validation_type == "float_precision":
+            precision = params.get("precision", 10)
+            scale = params.get("scale", 2)
+            return f"DETECT_INVALID_FLOAT_PRECISION({column}, {precision}, {scale})"
+
+        else:
+            raise ValueError(
+                f"Unsupported validation type for SQLite: {validation_type}"
+            )
+
+    def can_use_custom_functions(self) -> bool:
+        """SQLite supports custom functions"""
+        return True
+
+    def _normalize_format_pattern(self, format_pattern: str) -> str:
+        """Normalize format pattern to support both case variations"""
+        # Handle both case variations (YYYY/yyyy, MM/mm, etc.)
+        pattern_map = {
+            "YYYY": "%Y",
+            "yyyy": "%Y",
+            "MM": "%m",
+            "mm": "%m",
+            "DD": "%d",
+            "dd": "%d",
+            "HH": "%H",
+            "hh": "%H",
+            "MI": "%M",
+            "mi": "%M",
+            "SS": "%S",
+            "ss": "%S",
+        }
+
+        normalized = format_pattern
+        # Sort by length (descending) to avoid partial replacements
+        for fmt in sorted(pattern_map.keys(), key=len, reverse=True):
+            normalized = normalized.replace(fmt, pattern_map[fmt])
+
+        return normalized
 
 
 class SQLServerDialect(DatabaseDialect):
@@ -830,6 +1141,33 @@ class SQLServerDialect(DatabaseDialect):
             """
             params = {"table": table, "database": database}
         return sql.strip(), params
+
+    def generate_integer_regex_pattern(self, max_digits: int) -> str:
+        """Generate SQL Server-specific pattern for integer validation"""
+        # SQL Server doesn't support regex, so we return a simplified LIKE pattern
+        # This is a fallback - actual validation would need to use other approaches
+        return f"^-?[0-9]{{1,{max_digits}}}$"
+
+    def generate_float_regex_pattern(self, precision: int, scale: int) -> str:
+        """Generate SQL Server-specific pattern for float validation"""
+        # SQL Server doesn't support regex, return basic pattern for documentation
+        integer_digits = precision - scale
+        if scale > 0:
+            return f"^-?[0-9]{{1,{integer_digits}}}(\\.[0-9]{{1,{scale}}})?$"
+        else:
+            return f"^-?[0-9]{{1,{precision}}}\\.?0*$"
+
+    def generate_basic_integer_pattern(self) -> str:
+        """Generate SQL Server-specific pattern for basic integer validation"""
+        return "^-?[0-9]+$"
+
+    def generate_basic_float_pattern(self) -> str:
+        """Generate SQL Server-specific pattern for basic float validation"""
+        return "^-?[0-9]+(\\.[0-9]+)?$"
+
+    def generate_integer_like_float_pattern(self) -> str:
+        """Generate SQL Server-specific pattern for integer-like float validation"""
+        return "^-?[0-9]+\\.0*$"
 
 
 class DatabaseDialectFactory:

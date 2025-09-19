@@ -13,7 +13,7 @@ import asyncio  # For locking
 from enum import Enum
 from typing import Any, Dict, Optional, Union
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -44,6 +44,46 @@ _engine_cache: Dict[str, AsyncEngine] = {}
 _engine_creation_lock = (
     asyncio.Lock()
 )  # To prevent race conditions during engine creation
+
+
+def _register_sqlite_functions(dbapi_connection: Any, connection_record: Any) -> None:
+    """
+    Register SQLite custom validation functions
+
+    Automatically called when each SQLite connection is established, registering
+      custom functions for numeric precision validation
+    """
+    from shared.database.sqlite_functions import (
+        detect_invalid_float_precision,
+        detect_invalid_integer_digits,
+        detect_invalid_string_length,
+        is_valid_date,
+    )
+
+    try:
+        # Register integer digits validation function
+        dbapi_connection.create_function(
+            "DETECT_INVALID_INTEGER_DIGITS", 2, detect_invalid_integer_digits
+        )
+
+        # Register string length validation function
+        dbapi_connection.create_function(
+            "DETECT_INVALID_STRING_LENGTH", 2, detect_invalid_string_length
+        )
+
+        # Register floating point precision validation function
+        dbapi_connection.create_function(
+            "DETECT_INVALID_FLOAT_PRECISION", 3, detect_invalid_float_precision
+        )
+
+        # Register date format validation function
+        dbapi_connection.create_function("IS_VALID_DATE", 2, is_valid_date)
+
+        logger.debug("SQLite custom validation functions registered successfully")
+
+    except Exception as e:
+        logger.warning(f"SQLite custom function registration failed: {e}")
+        # Do not throw exception, allow connection to continue establishing
 
 
 def get_db_url(
@@ -209,6 +249,10 @@ async def get_engine(
                     # to avoid connection issues
                     pool_pre_ping=True,  # Enable connection health checks
                 )
+
+                # Register event listener to register custom functions on each
+                # connection establishment
+                event.listen(engine.sync_engine, "connect", _register_sqlite_functions)
             elif db_url.startswith(ConnectionType.CSV) or db_url.startswith(
                 ConnectionType.EXCEL
             ):
@@ -231,11 +275,14 @@ async def get_engine(
                             "server_settings": {
                                 "jit": "off"  # Disable JIT to improve stability
                             },
+                            # Improve connection cleanup behavior
+                            "timeout": 5,  # Connection timeout
                         }
                         if db_url.startswith("postgresql")
                         else {}
                     )
                 )
+
                 engine = create_async_engine(
                     db_url,
                     pool_size=pool_size,
@@ -319,7 +366,7 @@ async def close_all_engines() -> None:
                     )
                     continue
 
-                # Add timeout handling
+                # Add timeout handling with event loop closed detection
                 try:
                     await asyncio.wait_for(engine_instance.dispose(), timeout=30.0)
                     logger.debug(
@@ -328,6 +375,17 @@ async def close_all_engines() -> None:
                     )
                 except asyncio.TimeoutError:
                     logger.error(f"Timeout during disposal of engine for URL {url}")
+                except RuntimeError as re:
+                    if "Event loop is closed" in str(re):
+                        logger.debug(
+                            f"Event loop closed during disposal of engine for "
+                            f"URL {url}, skipping"
+                        )
+                    else:
+                        logger.error(
+                            f"Runtime error during engine.dispose() for URL {url}: "
+                            f"{re}"
+                        )
                 except Exception as dispose_error:
                     logger.error(
                         f"Error during engine.dispose() for URL {url}: "
@@ -383,7 +441,8 @@ async def retry_connection(
         ) as e:  # Catch SQLAlchemyError and other exceptions from connection
             logger.warning(
                 f"Connection attempt {attempt + 1}/{max_retries} for "
-                f"{db_url[:db_url.find('@') if '@' in db_url else 50]} failed: {str(e)}"
+                f"{db_url[:db_url.find('@') if '@' in db_url else 50]} "
+                f"failed: {str(e)}"
             )
             if attempt < max_retries - 1:
                 await asyncio.sleep(retry_interval * (2**attempt))

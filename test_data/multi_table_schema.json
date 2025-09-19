@@ -4,7 +4,8 @@
       { "field": "id", "type": "integer", "required": true },
       { "field": "name", "type": "string", "required": true },
       { "field": "email", "type": "string", "required": true },
-      { "field": "age", "type": "integer", "min": 0, "max": 120 },
+      { "field": "age", "type": "integer", "desired_type": "integer(2)",  "min": 0, "max": 120 },
+      { "field": "birthday", "type": "integer", "desired_type": "date('yyyymmdd')" },
       { "field": "status", "type": "string", "enum": ["active", "inactive", "pending"] }
     ],
     "strict_mode": true
@@ -13,7 +14,7 @@
     "rules": [
       { "field": "product_id", "type": "integer", "required": true },
       { "field": "product_name", "type": "string", "required": true },
-      { "field": "price", "type": "float", "min": 0.0 },
+      { "field": "price", "type": "float", "desired_type": "float(4,1)",  "min": 0.0 },
       { "field": "category", "type": "string", "enum": ["electronics", "clothing", "books"] },
       { "field": "in_stock", "type": "boolean" }
     ]
@@ -23,7 +24,9 @@
       { "field": "order_id", "type": "integer", "required": true },
       { "field": "user_id", "type": "integer", "required": true },
       { "field": "order_date", "type": "datetime", "required": true },
-      { "field": "total_amount", "type": "float", "min": 0.0 },
+      { "field": "total_amount", "type": "float", "desired_type": "integer(2)", "min": 0.0 },
+	  { "field": "create_date", "type": "string", "desired_type": "date('MM/DD/YYYY')" },
+	  { "field": "create_time", "type": "string", "desired_type": "datetime('HH:MI:SS')" },
       { "field": "order_status", "type": "string", "enum": ["pending", "confirmed", "shipped", "delivered"] }
     ],
     "case_insensitive": true

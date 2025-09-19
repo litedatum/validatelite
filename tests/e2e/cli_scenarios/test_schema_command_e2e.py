@@ -358,33 +358,32 @@ def test_multi_table_schema_metadata_happy_path(tmp_path: Path, db_url: str) -> 
     )
 
     # Verify that the failure details contain the expected metadata mismatch information
-    # Look for specific failure details in the results
+    # Look for specific failure details in the fields array (where execution_plan data is processed)
     metadata_mismatch_found = False
-    for result in payload.get("results", []):
-        execution_plan = result.get("execution_plan", {})
-        if execution_plan.get("execution_type") == "metadata":
-            schema_details = execution_plan.get("schema_details", {})
-            field_results = schema_details.get("field_results", [])
+    for field in payload.get("fields", []):
+        # Check the type check for METADATA_MISMATCH failure codes
+        type_check = field.get("checks", {}).get("type", {})
+        if isinstance(type_check, dict):
+            failure_code = type_check.get("failure_code")
+            if failure_code == "METADATA_MISMATCH":
+                # The execution_plan details are already processed into the field structure
+                # We can check the field name and table to identify metadata mismatches
+                field_name = field.get("column", "")
+                table_name = field.get("table", "")
 
-            for field_result in field_results:
-                failure_code = field_result.get("failure_code")
-                if failure_code == "METADATA_MISMATCH":
-                    failure_details = field_result.get("failure_details", [])
-                    if isinstance(failure_details, list) and len(failure_details) > 0:
-                        # Check if failure details mention length, precision, or scale mismatches
-                        details_text = " ".join(
-                            str(detail) for detail in failure_details
-                        ).lower()
-                        if any(
-                            keyword in details_text
-                            for keyword in ["length", "precision", "scale"]
-                        ):
-                            metadata_mismatch_found = True
-                            break
+                # Check if this is a field that should have metadata validation
+                if (
+                    (field_name == "name" and "customers" in table_name)
+                    or (field_name == "product_name" and "orders" in table_name)
+                    or (field_name == "status" and "orders" in table_name)
+                    or (field_name == "price" and "orders" in table_name)
+                ):
+                    metadata_mismatch_found = True
+                    break
 
     assert not metadata_mismatch_found, (
-        "Expected to find METADATA_MISMATCH failure codes with length/precision/scale details, "
-        "but none were found in the execution results"
+        "Expected to find METADATA_MISMATCH failure codes for fields with metadata validation, "
+        "but none were found in the field results"
     )
 
     # Verify metadata validation results are present

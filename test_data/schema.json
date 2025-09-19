@@ -13,11 +13,24 @@
     "rules": [
       { "field": "id", "type": "integer", "required": true },
       { "field": "customer_id", "type": "integer", "required": true },
-      { "field": "product_name", "type": "string", "max_length": 155, "required": true },
-      { "field": "quantity", "type": "integer", "required": true },
-      { "field": "price", "type": "float", "precision": 8, "scale": 2, "required": true},
+      { "field": "product_name", "type": "string", "max_length": 255, "desired_type": "string(12)", "required": true },
+      { "field": "quantity", "type": "integer", "desired_type": "integer(1)", "required": true },
+      { "field": "price", "type": "float(5,2)", "desired_type": "string(8)","required": true},
       { "field": "status", "type": "string", "max_length": 50, "required": true },
       { "field": "order_date", "type": "date", "required": true }
+    ]
+  },
+  "order_rec": {
+    "rules": [
+      { "field": "id", "type": "integer", "required": true },
+      { "field": "customer_id", "type": "integer", "required": true },
+      { "field": "product_name", "type": "string", "max_length": 255, "desired_type": "string(210)", "required": true },
+      { "field": "quantity", "type": "integer", "desired_type": "integer(1)", "required": true },
+      { "field": "price", "type": "float(5,2)", "desired_type": "string(8)","required": true},
+      { "field": "status", "type": "string", "max_length": 50, "required": true },
+      { "field": "order_date", "type": "date", "required": true },
+	  { "field": "ord_md", "type": "string", "desired_type": "date('MMDD')", "required": true },
+	  { "field": "ord_date_str", "type": "string", "desired_type": "date('MM/DD/YYYY')", "required": true }
     ],
     "strict_mode": false,
     "case_insensitive": true

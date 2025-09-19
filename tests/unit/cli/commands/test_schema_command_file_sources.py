@@ -40,7 +40,7 @@ class TestSchemaCommandForFileSources:
         )
         monkeypatch.setattr(
             "cli.commands.schema._decompose_schema_payload",
-            lambda payload, source_config: [schema_rule],
+            lambda payload, source_config: ([schema_rule], []),
         )
 
         # Build SCHEMA result indicating SQLite TEXT types cause TYPE_MISMATCH

@@ -86,9 +86,15 @@ async def cleanup_connection_pool() -> AsyncGenerator[None, None]:
     """
     # Clear the connection pool before and after each test.
     yield
-    # Clean up after testing.
+    # Clean up after testing with improved error handling
     try:
         await close_all_engines()
+    except RuntimeError as re:
+        if "Event loop is closed" in str(re):
+            # This is expected when event loop is closing, no need to log error
+            pass
+        else:
+            print(f"Warning: Runtime error during connection pool cleanup: {re}")
     except Exception as e:
         # Log any data cleaning errors encountered, but do not allow them to affect the test results.
         print(f"Warning: Error during connection pool cleanup: {e}")

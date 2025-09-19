@@ -6,7 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-
 ### Added
 - None
 
@@ -18,6 +17,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - None
+
+## [0.5.0] 2025-9-18
+
+### Added
+- feat(schema): Implement syntactic sugar for type definitions in schema rules
+- feat(core): Add TypeParser utility for parsing compact type definitions (e.g., `string(50)`, `float(12,2)`)
+- feat(schema): Support shorthand type syntax: `string(50)` → `{"type": "string", "max_length": 50}`
+- feat(schema): Support float precision/scale syntax: `float(12,2)` → `{"type": "float", "precision": 12, "scale": 2}`
+- feat(schema): Support datetime format syntax: `datetime('yyyymmdd')` → `{"type": "datetime", "format": "yyyymmdd"}`
+- feat(core): Enhanced schema executor with native database type reporting capabilities
+- feat(core): Add comprehensive type aliases support (str→string, int→integer, bool→boolean)
+- feat(tests): Comprehensive test coverage for type parser with unit and integration tests
+- feat(tests): Native type integration testing for enhanced schema validation
+- **feat(architecture): Implement two-phase execution framework in CLI with skip semantics**
+- feat(schema): Add SchemaPhaseExecutor class for coordinated Phase 1 execution (schema rules only)
+- feat(schema): Add DesiredTypePhaseExecutor class for coordinated Phase 2 execution (additional rules with filtering)
+- feat(schema): Add ResultMerger class for combining phase results while maintaining output format consistency
+- feat(schema): Comprehensive logging system for debugging two-phase execution with timing and rule counts
+- feat(schema): Intelligent rule separation - automatically separate SCHEMA rules from other rule types for phased execution
+- **feat(schema): Implement desired_type soft validation with compatibility analysis and rule generation**
+- feat(schema): Add desired_type parsing support with extended TypeParser for complex type definitions
+- feat(schema): Implement CompatibilityAnalyzer for intelligent type conversion analysis (COMPATIBLE/INCOMPATIBLE/CONFLICTING)
+- feat(schema): Add DesiredTypeRuleGenerator for automatic validation rule creation based on compatibility analysis
+- feat(schema): Generate LENGTH rules for precision/length reduction scenarios in type conversions
+- feat(schema): Generate REGEX rules for string-to-numeric type conversion validation
+- feat(schema): Generate DATE_FORMAT rules for date validation (MySQL support)
+- feat(schema): Enhanced result merging with desired_type validation results integration
+- feat(schema): Updated JSON and table output formats to display desired_type validation status
+- feat(schema): Comprehensive error handling with clear distinction between schema vs desired_type failures
+- feat(tests): Complete test coverage for desired_type validation including compatibility analysis and rule generation
+
+### Changed
+- enhance(cli): Updated schema command to support both syntactic sugar and detailed JSON type definitions
+- enhance(core): Improved schema executor to handle parsed type definitions with metadata
+- enhance(validation): Maintain backward compatibility with existing detailed JSON schema format
+- **refactor(schema): Enhanced `_decompose_schema_payload()` to return tuple of (schema_rules, other_rules) for two-phase execution**
+- refactor(schema): Added `_decompose_schema_payload_atomic()` for backward compatibility with single-list return format
+- refactor(tests): Updated all schema-related test mocks to handle new tuple return format from rule decomposition
+- improve(architecture): All validation maintains identical output format and behavior - no user-visible changes
+- **enhance(schema): Extended two-phase execution framework with actual desired_type validation implementation**
+- enhance(schema): DesiredTypePhaseExecutor now performs actual compatibility analysis and rule generation (no longer skip-only)
+- enhance(schema): Enhanced type parser with full desired_type syntax support including complex type definitions
+- enhance(validation): Intelligent compatibility matrix ensures optimal validation performance by skipping unnecessary checks
+- enhance(output): Merged validation results clearly distinguish between schema structure validation and desired_type compatibility validation
+
+### Fixed
+- **fix(async): Resolved RuntimeError event loop management issue in two-phase execution**
+- fix(async): Consolidated both validation phases into single event loop to prevent database connection pool conflicts
+- fix(async): Eliminated multiple `asyncio.run()` calls that caused "Event loop is closed" errors in production
+- fix(tests): Updated test contracts and mocks to work with new two-phase execution architecture
+- **fix(sqlite): Implemented custom functions to solve SQLite regex compatibility limitations**
+- fix(sqlite): Created comprehensive SQLite custom validation functions for precision and length validation
+- fix(sqlite): Added `DETECT_INVALID_INTEGER_DIGITS`, `DETECT_INVALID_STRING_LENGTH`, `DETECT_INVALID_FLOAT_PRECISION` functions
+- fix(sqlite): Automatic registration of custom functions via SQLAlchemy event listeners on connection establishment
+- fix(database): Enhanced database dialect to intelligently use custom functions for SQLite regex replacement
+- fix(validation): Seamless fallback from regex patterns to custom function calls for incompatible databases
+
+### Removed
+- None
+
+### Architecture Notes
+- **Two-Phase Execution Framework**: Complete implementation with desired_type soft validation capabilities
+- **Phase 1**: Schema rules execute first to collect native type information and validate table/column existence
+- **Phase 2**: Desired_type compatibility analysis with automatic rule generation for incompatible type conversions
+- **Compatibility Analysis**: Intelligent type conversion analysis (COMPATIBLE/INCOMPATIBLE/CONFLICTING) optimizes validation performance
+- **Rule Generation**: Automatic LENGTH, REGEX, and DATE_FORMAT rule creation based on compatibility analysis results
+- **Skip Logic**: Rules targeting missing tables/columns are automatically skipped to prevent cascading failures
+- **Result Merging**: Unified results combining schema validation and desired_type validation with clear error distinction
+- **Performance**: Current implementation optimizes for stability over concurrency - both phases execute serially within single event loop
+- **Database Support**: DATE_FORMAT validation currently supports MySQL with planned SQLite/PostgreSQL support in Phase 4
+- **SQLite Regex Compatibility**: Custom function implementation (`shared/database/sqlite_functions.py`) provides seamless regex replacement for SQLite databases that lack native regex support
+- **Custom Function Architecture**: Automatic registration of `DETECT_INVALID_INTEGER_DIGITS`, `DETECT_INVALID_STRING_LENGTH`, and `DETECT_INVALID_FLOAT_PRECISION` functions via SQLAlchemy event listeners
+- **Intelligent Fallback**: Database dialect automatically detects SQLite and converts regex patterns to equivalent custom function calls for precision/length validation
 
 ## [0.4.3] - 2025-09-06
 

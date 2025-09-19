@@ -1,0 +1,11 @@
+{
+  "products": {
+    "rules": [
+      { "field": "product_id", "type": "integer", "required": true },
+      { "field": "product_name", "type": "string", "required": true },
+      { "field": "price", "type": "float", "desired_type": "float(4,1)", "min": 0.0 },
+      { "field": "category", "type": "string", "enum": ["electronics", "clothing", "books"] },
+      { "field": "in_stock", "type": "boolean" }
+    ]
+  }
+}
