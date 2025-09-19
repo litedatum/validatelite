@@ -794,7 +794,16 @@ class RuleMergeManager:
         # Add dialect attribute, get dialect from connection
         self.dialect = get_dialect(connection.connection_type.value)
 
-        if not self.dialect.is_supported_date_format():
+        # Handle DATE_FORMAT rules based on database type
+        # PostgreSQL requires two-stage validation and cannot be merged
+        # SQLite uses custom functions and complexity may not benefit from merging
+        from shared.database.database_dialect import DatabaseType
+
+        if (
+            not self.dialect.is_supported_date_format()
+            or self.dialect.database_type == DatabaseType.POSTGRESQL
+            or self.dialect.database_type == DatabaseType.SQLITE
+        ):
             self.independent_rule_types.add(RuleType.DATE_FORMAT)
 
         self.logger = get_logger(f"{__name__}.{self.__class__.__name__}")

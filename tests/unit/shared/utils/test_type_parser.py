@@ -169,7 +169,7 @@ class TestTypeParser:
                 "precision/scale can only be specified for FLOAT type",
             ),
             (
-                {"type": "date", "format": "yyyy"},
+                {"type": "date", "format": "hh:mi:ss"},
                 "format can only be specified for DATETIME type",
             ),
             (

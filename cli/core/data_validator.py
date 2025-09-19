@@ -136,7 +136,8 @@ class DataValidator:
         # Determine table name from source config
         table_name = None
         if "table" in self.source_config.parameters:
-            table_name = self.source_config.parameters["table"]
+            # Clean table name from parameters
+            table_name = self._clean_table_name(self.source_config.parameters["table"])
         elif self.source_config.connection_type in [
             ConnectionType.CSV,
             ConnectionType.EXCEL,
@@ -206,6 +207,60 @@ class DataValidator:
             # Handle multi-table Excel file
             self.logger.info("Processing multi-table Excel file")
             sqlite_config = await self._convert_multi_table_excel_to_sqlite()
+
+            # Update source config to use SQLite
+            self.source_config = sqlite_config
+
+            # Only re-update rule entities for single table mode (check command)
+            # Multi-table mode (schema command) should keep original rule entities
+            is_single_table_mode = sqlite_config.parameters.get(
+                "single_table_mode", False
+            )
+
+            if is_single_table_mode:
+                # Re-update rule entities with SQLite configuration for single table
+                # Determine database name
+                if self.source_config.connection_type in [
+                    ConnectionType.CSV,
+                    ConnectionType.EXCEL,
+                    ConnectionType.JSON,
+                ]:
+                    db_name = "main"  # File-based sources use SQLite internally
+                else:
+                    db_name = self.source_config.db_name or "default"
+
+                # Determine table name from SQLite config
+                table_name = None
+                if "table" in self.source_config.parameters:
+                    # Clean table name from parameters
+                    table_name = self._clean_table_name(
+                        self.source_config.parameters["table"]
+                    )
+                elif self.source_config.connection_type in [
+                    ConnectionType.CSV,
+                    ConnectionType.EXCEL,
+                    ConnectionType.JSON,
+                ]:
+                    if self.source_config.file_path:
+                        # Extract table name from file path
+                        file_path = Path(self.source_config.file_path)
+                        table_name = self._clean_table_name(file_path.stem)
+                    else:
+                        table_name = "data"  # Default for files without path
+                else:
+                    table_name = "default_table"  # Default for database connections
+
+                # Update all rules with SQLite configuration
+                for rule in self.rules:
+                    for entity in rule.target.entities:
+                        entity.database = db_name
+                        entity.table = table_name
+
+                self.logger.info(
+                    f"Updated rule entities for single table mode, table: {table_name}"
+                )
+            else:
+                self.logger.info("Multi-table mode - keeping original rule entities")
         else:
             # Handle single-table file (existing logic)
             self.logger.info("Processing single-table file")
@@ -366,17 +421,41 @@ class DataValidator:
             # Get table mapping for connection config
             table_mapping = self.source_config.parameters.get("table_mapping", {})
 
+            # Get user-specified table if any
+            user_table = self.source_config.parameters.get("table")
+
             # Create connection config with multi-table information
+            sqlite_config_params = {
+                "is_multi_table": True,
+                "table_mapping": table_mapping,
+                "temp_file": True,  # Mark as temporary file for cleanup
+            }
+
+            # Add user-specified table if provided, using mapped table name
+            # Only for check command - schema command should handle all tables
+            if user_table:
+                # Use the mapped table name if available, otherwise use original
+                mapped_table = table_mapping.get(user_table, user_table)
+                sqlite_config_params["table"] = mapped_table
+                sqlite_config_params["single_table_mode"] = (
+                    True  # Mark as single table mode
+                )
+                self.logger.info(
+                    f"User specified table '{user_table}' mapped to '{mapped_table}' "
+                    "(single table mode)"
+                )
+            else:
+                sqlite_config_params["single_table_mode"] = (
+                    False  # Multi-table mode for schema command
+                )
+                self.logger.info("Multi-table mode - will process all tables")
+
             sqlite_config = ConnectionSchema(
                 name="temp_sqlite_multi_table",
                 description="Temporary SQLite for multi-table Excel validation",
                 connection_type=ConnectionType.SQLITE,
                 file_path=temp_db_path,
-                parameters={
-                    "is_multi_table": True,
-                    "table_mapping": table_mapping,
-                    "temp_file": True,  # Mark as temporary file for cleanup
-                },
+                parameters=sqlite_config_params,
             )
 
             # Log performance metrics
@@ -539,8 +618,10 @@ class DataValidator:
                 self.source_config.parameters
                 and "table" in self.source_config.parameters
             ):
-                # Use table name from parameters if available
-                table_name = self.source_config.parameters["table"]
+                # Use table name from parameters if available, but clean it
+                table_name = self._clean_table_name(
+                    self.source_config.parameters["table"]
+                )
             elif self.source_config.file_path:
                 # Extract table name from file path
                 file_path = Path(self.source_config.file_path)

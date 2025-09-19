@@ -398,7 +398,9 @@ class TestDesiredTypeValidationMySQLRefactored:
                         order_id INT PRIMARY KEY AUTO_INCREMENT,
                         user_id INT NOT NULL,
                         total_amount DECIMAL(10,2) NOT NULL,
-                        order_status VARCHAR(20) NOT NULL
+                        order_status VARCHAR(20) NOT NULL,
+                        order_date VARCHAR(20) NOT NULL,
+                        order_time VARCHAR(20) NOT NULL
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """,
                     fetch=False,
@@ -410,7 +412,8 @@ class TestDesiredTypeValidationMySQLRefactored:
                         user_id INT PRIMARY KEY AUTO_INCREMENT,
                         name VARCHAR(100) NOT NULL,
                         age INT NOT NULL,
-                        email VARCHAR(255) NOT NULL
+                        email VARCHAR(255) NOT NULL,
+                        birthday INT NOT NULL
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """,
                     fetch=False,
@@ -430,20 +433,25 @@ class TestDesiredTypeValidationMySQLRefactored:
 
                 await executor.execute_query(
                     """
-                    INSERT INTO t_orders (user_id, total_amount, order_status) VALUES
-                    (101, 89.0, 'pending'),
-                    (102, 999.99, 'pending'),
-                    (103, 123.45, 'pending')
+                    INSERT INTO t_orders (user_id, total_amount, order_status, order_date, order_time) VALUES
+                    (101, 89.0, 'pending', '2020-02-29', '12:13:14'),
+                    (102, 999.99, 'pending', '2019-11-22', '12:00:00'),
+                    (103, 123.45, 'pending', '2021-02-29', '14:15:78'),
+                    (104, 123.45, 'pending', '2021-04-31', '15:16:17'),
+                    (105, 123.45, 'pending', '2011-01-05', '25:17:18'),
+                    (106, 123.45, 'pending', '2024-13-06', '12:00:00')
                 """,
                     fetch=False,
                 )
 
                 await executor.execute_query(
                     """
-                    INSERT INTO t_users (name, age, email) VALUES
-                    ('Alice', 25, 'alice@test.com'),
-                    ('VeryLongName', 123, 'bob@test.com'),
-                    ('Charlie', 150, 'charlie@test.com')
+                    INSERT INTO t_users (name, age, email, birthday) VALUES
+                    ('Alice', 25, 'alice@test.com', 19680223),
+                    ('VeryLongName', 123, 'bob@test.com', 19780230),
+                    ('Charlie', 150, 'charlie@test.com', 19680630),
+                    ('David', 150, 'david@test.com', 19610631),
+                    ('Eve', 150, 'eve@test.com', 19680701)
                 """,
                     fetch=False,
                 )
@@ -524,8 +532,111 @@ class TestDesiredTypeValidationMySQLRefactored:
             TestAssertionHelpers.assert_validation_results(
                 results=payload["fields"],
                 expected_failed_tables=["t_products", "t_orders", "t_users"],
-                min_total_anomalies=3,
+                min_total_anomalies=10,  # Updated to include date validation failures
             )
+
+            # Additional assertions for date-related validation results (MySQL)
+            results = payload["results"]
+            fields = payload["fields"]
+
+            # Find date-related validation results
+            date_format_results = [
+                r
+                for r in results
+                if "DATE_FORMAT" in str(r.get("execution_plan", {}))
+                or ("DATE_FORMAT" in (r.get("execution_message") or ""))
+            ]
+
+            # Check specific field validation results in the fields section
+            orders_fields = [f for f in fields if f["table"] == "t_orders"]
+            order_date_field = next(
+                (f for f in orders_fields if f["column"] == "order_date"), None
+            )
+            order_time_field = next(
+                (f for f in orders_fields if f["column"] == "order_time"), None
+            )
+
+            users_fields = [f for f in fields if f["table"] == "t_users"]
+            birthday_field = next(
+                (f for f in users_fields if f["column"] == "birthday"), None
+            )
+
+            # Verify DATE_FORMAT validation was attempted and check specific failure counts
+            date_failed_records = 0
+
+            if order_date_field:
+                print(f"\nMySQL Order date field validation: {order_date_field}")
+                assert (
+                    "checks" in order_date_field
+                ), "order_date should have validation checks"
+                # Expected failures: '2021-02-29', '2021-04-31', '2024-13-06' = 3 records
+                # Date validation is performed in the 'desired_type' check
+                if "desired_type" in order_date_field["checks"]:
+                    check_result = order_date_field["checks"]["desired_type"]
+                    failed_count = check_result.get("failed_records", 0)
+                    print(
+                        f"  MySQL order_date desired_type: {failed_count} failed records"
+                    )
+                    # Expected failures: '2021-02-29', '2021-04-31', '2024-13-06' = exactly 3 records
+                    assert (
+                        failed_count == 3
+                    ), f"Expected exactly 3 failed records for order_date date validation, got {failed_count}"
+                    date_failed_records += failed_count
+
+            if order_time_field:
+                print(f"\nMySQL Order time field validation: {order_time_field}")
+                assert (
+                    "checks" in order_time_field
+                ), "order_time should have validation checks"
+                # Expected failures: '14:15:78', '25:17:18' = exactly 2 records
+                # Time validation is performed in the 'desired_type' check
+                if "desired_type" in order_time_field["checks"]:
+                    check_result = order_time_field["checks"]["desired_type"]
+                    failed_count = check_result.get("failed_records", 0)
+                    print(
+                        f"  MySQL order_time desired_type: {failed_count} failed records"
+                    )
+                    assert (
+                        failed_count == 2
+                    ), f"Expected exactly 2 failed records for order_time time validation, got {failed_count}"
+                    date_failed_records += failed_count
+
+            if birthday_field:
+                print(f"\nMySQL Birthday field validation: {birthday_field}")
+                assert (
+                    "checks" in birthday_field
+                ), "birthday should have validation checks"
+                # Expected failures: 19780230, 19610631 = exactly 2 records
+                # Date validation is performed in the 'desired_type' check
+                if "desired_type" in birthday_field["checks"]:
+                    check_result = birthday_field["checks"]["desired_type"]
+                    failed_count = check_result.get("failed_records", 0)
+                    print(
+                        f"  MySQL birthday desired_type: {failed_count} failed records"
+                    )
+                    assert (
+                        failed_count == 2
+                    ), f"Expected exactly 2 failed records for birthday date validation, got {failed_count}"
+                    date_failed_records += failed_count
+
+            # Verify total date-related failures
+            print(f"\nMySQL Total date-related failed records: {date_failed_records}")
+            assert (
+                date_failed_records == 7
+            ), f"Expected exactly 7 date-related validation failures (3+2+2), got {date_failed_records}"
+
+            # Count total failed records from all rules to verify DATE_FORMAT failures are included
+            total_failed_records = payload["summary"]["total_failed_records"]
+            print(
+                f"MySQL Total failed records across all validations: {total_failed_records}"
+            )
+
+            # We expect date format validation failures in addition to other constraint failures
+            # Expected date failures: exactly 3 (order_date) + 2 (order_time) + 2 (birthday) = 7
+            # Plus other constraint failures (float precision, integer range, string length)
+            assert (
+                total_failed_records >= 10
+            ), f"Expected at least 10 failed records including date format validations, got {total_failed_records}"
         finally:
             # Cleanup database
             asyncio.run(cleanup_database())
@@ -594,7 +705,9 @@ class TestDesiredTypeValidationPostgreSQLRefactored:
                         order_id SERIAL PRIMARY KEY,
                         user_id INTEGER NOT NULL,
                         total_amount NUMERIC(10,2) NOT NULL,
-                        order_status VARCHAR(20) NOT NULL
+                        order_status VARCHAR(20) NOT NULL,
+                        order_date VARCHAR(20) NOT NULL,
+                        order_time VARCHAR(20) NOT NULL
                     )
                 """,
                     fetch=False,
@@ -606,7 +719,8 @@ class TestDesiredTypeValidationPostgreSQLRefactored:
                         user_id SERIAL PRIMARY KEY,
                         name VARCHAR(100) NOT NULL,
                         age INTEGER NOT NULL,
-                        email VARCHAR(255) NOT NULL
+                        email VARCHAR(255) NOT NULL,
+                        birthday INTEGER NOT NULL
                     )
                 """,
                     fetch=False,
@@ -626,20 +740,25 @@ class TestDesiredTypeValidationPostgreSQLRefactored:
 
                 await executor.execute_query(
                     """
-                    INSERT INTO t_orders (user_id, total_amount, order_status) VALUES
-                    (101, 89.0, 'pending'),
-                    (102, 999.99, 'pending'),
-                    (103, 123.45, 'pending')
+                    INSERT INTO t_orders (user_id, total_amount, order_status, order_date, order_time) VALUES
+                    (101, 89.0, 'pending', '2020-02-29', '12:13:14'),
+                    (102, 999.99, 'pending', '2019-11-22', '12:00:00'),
+                    (103, 123.45, 'pending', '2021-02-29', '14:15:78'),
+                    (104, 123.45, 'pending', '2021-04-31', '15:16:17'),
+                    (105, 123.45, 'pending', '2011-01-05', '25:17:18'),
+                    (106, 123.45, 'pending', '2024-13-06', '12:00:00')
                 """,
                     fetch=False,
                 )
 
                 await executor.execute_query(
                     """
-                    INSERT INTO t_users (name, age, email) VALUES
-                    ('Alice', 25, 'alice@test.com'),
-                    ('VeryLongName', 123, 'bob@test.com'),
-                    ('Charlie', 150, 'charlie@test.com')
+                    INSERT INTO t_users (name, age, email, birthday) VALUES
+                    ('Alice', 25, 'alice@test.com', 19680223),
+                    ('VeryLongName', 123, 'bob@test.com', 19780230),
+                    ('Charlie', 150, 'charlie@test.com', 19680630),
+                    ('David', 150, 'david@test.com', 19610631),
+                    ('Eve', 150, 'eve@test.com', 19680701)
                 """,
                     fetch=False,
                 )
@@ -716,8 +835,114 @@ class TestDesiredTypeValidationPostgreSQLRefactored:
             TestAssertionHelpers.assert_validation_results(
                 results=payload["fields"],
                 expected_failed_tables=["t_products", "t_orders", "t_users"],
-                min_total_anomalies=3,
+                min_total_anomalies=10,  # Updated to include date validation failures
             )
+
+            # Additional assertions for date-related validation results (PostgreSQL)
+            results = payload["results"]
+            fields = payload["fields"]
+
+            # Find date-related validation results
+            date_format_results = [
+                r
+                for r in results
+                if "DATE_FORMAT" in str(r.get("execution_plan", {}))
+                or ("DATE_FORMAT" in (r.get("execution_message") or ""))
+            ]
+
+            # Check specific field validation results in the fields section
+            orders_fields = [f for f in fields if f["table"] == "t_orders"]
+            order_date_field = next(
+                (f for f in orders_fields if f["column"] == "order_date"), None
+            )
+            order_time_field = next(
+                (f for f in orders_fields if f["column"] == "order_time"), None
+            )
+
+            users_fields = [f for f in fields if f["table"] == "t_users"]
+            birthday_field = next(
+                (f for f in users_fields if f["column"] == "birthday"), None
+            )
+
+            # Verify DATE_FORMAT validation was attempted and check specific failure counts
+            date_failed_records = 0
+
+            if order_date_field:
+                print(f"\nPostgreSQL Order date field validation: {order_date_field}")
+                assert (
+                    "checks" in order_date_field
+                ), "order_date should have validation checks"
+                # Expected failures: '2021-02-29', '2021-04-31', '2024-13-06' = 3 records
+                # Date validation is performed in the 'desired_type' check
+                if "desired_type" in order_date_field["checks"]:
+                    check_result = order_date_field["checks"]["desired_type"]
+                    failed_count = check_result.get("failed_records", 0)
+                    print(
+                        f"  PostgreSQL order_date desired_type: {failed_count} failed records"
+                    )
+                    # Expected failures: '2021-02-29', '2021-04-31', '2024-13-06' = exactly 3 records
+                    assert (
+                        failed_count == 3
+                    ), f"Expected exactly 3 failed records for order_date date validation, got {failed_count}"
+                    date_failed_records += failed_count
+
+            if order_time_field:
+                print(f"\nPostgreSQL Order time field validation: {order_time_field}")
+                assert (
+                    "checks" in order_time_field
+                ), "order_time should have validation checks"
+                # Expected failures: '14:15:78', '25:17:18' = 2 records
+                # Time validation is performed in the 'desired_type' check
+                if "desired_type" in order_time_field["checks"]:
+                    check_result = order_time_field["checks"]["desired_type"]
+                    failed_count = check_result.get("failed_records", 0)
+                    print(
+                        f"  PostgreSQL order_time desired_type: {failed_count} failed records"
+                    )
+                    # Expected failures: '14:15:78', '25:17:18' = exactly 2 records
+                    assert (
+                        failed_count == 2
+                    ), f"Expected exactly 2 failed records for order_time time validation, got {failed_count}"
+                    date_failed_records += failed_count
+
+            if birthday_field:
+                print(f"\nPostgreSQL Birthday field validation: {birthday_field}")
+                assert (
+                    "checks" in birthday_field
+                ), "birthday should have validation checks"
+                # Expected failures: 19780230, 19610631 = exactly 2 records
+                # Date validation is performed in the 'desired_type' check
+                if "desired_type" in birthday_field["checks"]:
+                    check_result = birthday_field["checks"]["desired_type"]
+                    failed_count = check_result.get("failed_records", 0)
+                    print(
+                        f"  PostgreSQL birthday desired_type: {failed_count} failed records"
+                    )
+                    assert (
+                        failed_count == 2
+                    ), f"Expected exactly 2 failed records for birthday date validation, got {failed_count}"
+                    date_failed_records += failed_count
+
+            # Verify total date-related failures
+            print(
+                f"\nPostgreSQL Total date-related failed records: {date_failed_records}"
+            )
+            assert (
+                date_failed_records == 7
+            ), f"Expected exactly 7 date-related validation failures (3+2+2), got {date_failed_records}"
+
+            # Count total failed records from all rules to verify DATE_FORMAT failures are included
+            total_failed_records = payload["summary"]["total_failed_records"]
+            print(
+                f"PostgreSQL Total failed records across all validations: {total_failed_records}"
+            )
+
+            # We expect date format validation failures in addition to other constraint failures
+            # Expected date failures: exactly 3 (order_date) + 2 (order_time) + 2 (birthday) = 7
+            # Plus other constraint failures (float precision, integer range, string length)
+            assert (
+                total_failed_records >= 10
+            ), f"Expected at least 10 failed records including date format validations, got {total_failed_records}"
         finally:
             # Cleanup database
             asyncio.run(cleanup_database())

@@ -5,7 +5,7 @@
       { "field": "name", "type": "string", "required": true },
       { "field": "email", "type": "string", "required": true },
       { "field": "age", "type": "integer", "desired_type": "integer(2)",  "min": 0, "max": 120 },
-      { "field": "birthday", "type": "integer", "required": true },
+      { "field": "birthday", "type": "integer", "desired_type": "date('yyyymmdd')" },
       { "field": "status", "type": "string", "enum": ["active", "inactive", "pending"] }
     ],
     "strict_mode": true
@@ -25,6 +25,8 @@
       { "field": "user_id", "type": "integer", "required": true },
       { "field": "order_date", "type": "datetime", "required": true },
       { "field": "total_amount", "type": "float", "desired_type": "integer(2)", "min": 0.0 },
+	  { "field": "create_date", "type": "string", "desired_type": "date('MM/DD/YYYY')" },
+	  { "field": "create_time", "type": "string", "desired_type": "datetime('HH:MI:SS')" },
       { "field": "order_status", "type": "string", "enum": ["pending", "confirmed", "shipped", "delivered"] }
     ],
     "case_insensitive": true

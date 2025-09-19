@@ -270,11 +270,16 @@ class MySQLDialect(DatabaseDialect):
 
     def get_date_clause(self, column: str, format_pattern: str) -> str:
         """MySQL uses STR_TO_DATE for date formatting"""
-        # Step 1: Convert pattern format (YYYY -> %Y, MM -> %m, DD -> %d)
+        # Step 1: Convert pattern format to MySQL format specifiers
         pattern = format_pattern
+        # Date components
         pattern = pattern.replace("YYYY", "%Y")
         pattern = pattern.replace("MM", "%m")
         pattern = pattern.replace("DD", "%d")
+        # Time components
+        pattern = pattern.replace("HH", "%H")
+        pattern = pattern.replace("MI", "%i")  # MySQL uses %i for minutes
+        pattern = pattern.replace("SS", "%s")
 
         pattern_len = len(format_pattern)
         if "%Y" in format_pattern:
@@ -491,12 +496,19 @@ class PostgreSQLDialect(DatabaseDialect):
         return f"LOWER({column}) LIKE LOWER('{pattern}')"
 
     def get_date_clause(self, column: str, format_pattern: str) -> str:
-        """PostgreSQL uses TO_TIMESTAMP for date formatting"""
-        return f"TO_TIMESTAMP({column}, '{format_pattern}')"
+        """PostgreSQL: Generate regex pattern for first-stage validation"""
+        # Convert format pattern to regex for PostgreSQL
+        regex_pattern = self._format_pattern_to_regex(format_pattern)
+        # Return condition that identifies invalid formats
+        #  (for COUNT in anomaly detection)
+        return (
+            f"CASE WHEN {column} IS NOT NULL AND {column} !~ '{regex_pattern}' "
+            f"THEN NULL ELSE 'valid' END"
+        )
 
     def is_supported_date_format(self) -> bool:
-        """PostgreSQL does not support date formats"""
-        return False
+        """PostgreSQL supports date formats with two-stage validation"""
+        return True
 
     def get_date_functions(self) -> Dict[str, str]:
         """Get PostgreSQL date functions"""
@@ -597,28 +609,120 @@ class PostgreSQLDialect(DatabaseDialect):
 
     def generate_integer_regex_pattern(self, max_digits: int) -> str:
         """Generate PostgreSQL-specific regex pattern for integer validation"""
-        # PostgreSQL supports \d in regex patterns
-        return f"^-?\\d{{1,{max_digits}}}$"
+        # PostgreSQL uses POSIX regex - use [0-9] instead of \\d
+        return f"^-?[0-9]{{1,{max_digits}}}$"
 
     def generate_float_regex_pattern(self, precision: int, scale: int) -> str:
         """Generate PostgreSQL-specific regex pattern for float validation"""
         integer_digits = precision - scale
         if scale > 0:
-            return f"^-?\\d{{1,{integer_digits}}}(\\.\\d{{1,{scale}}})?$"
+            return f"^-?[0-9]{{1,{integer_digits}}}(\\.[0-9]{{1,{scale}}})?$"
         else:
-            return f"^-?\\d{{1,{precision}}}\\.?0*$"
+            return f"^-?[0-9]{{1,{precision}}}\\.?0*$"
 
     def generate_basic_integer_pattern(self) -> str:
         """Generate PostgreSQL-specific regex pattern for basic integer validation"""
-        return "^-?\\d+$"
+        return "^-?[0-9]+$"
 
     def generate_basic_float_pattern(self) -> str:
         """Generate PostgreSQL-specific regex pattern for basic float validation"""
-        return "^-?\\d+(\\.\\d+)?$"
+        return "^-?[0-9]+(\\.([0-9]+)?)?$"
 
     def generate_integer_like_float_pattern(self) -> str:
         """Generate PostgreSQL regex pattern for integer-like float validation"""
-        return "^-?\\d+\\.0*$"
+        return "^-?[0-9]+\\.0*$"
+
+    def _format_pattern_to_regex(self, format_pattern: str) -> str:
+        """Convert date format pattern to PostgreSQL regex pattern"""
+        # Handle both case variations (YYYY/yyyy, MM/mm, etc.)
+        # PostgreSQL uses POSIX regex - use [0-9] instead of \\d
+        pattern_map = {
+            "YYYY": r"[0-9]{4}",
+            "yyyy": r"[0-9]{4}",
+            "MM": r"[0-9]{2}",
+            "mm": r"[0-9]{2}",
+            "DD": r"[0-9]{2}",
+            "dd": r"[0-9]{2}",
+            "HH": r"[0-9]{2}",
+            "hh": r"[0-9]{2}",
+            "MI": r"[0-9]{2}",
+            "mi": r"[0-9]{2}",
+            "SS": r"[0-9]{2}",
+            "ss": r"[0-9]{2}",
+        }
+
+        regex = format_pattern
+        # Sort by length (descending) to avoid partial replacements
+        for fmt in sorted(pattern_map.keys(), key=len, reverse=True):
+            regex = regex.replace(fmt, pattern_map[fmt])
+
+        return f"^{regex}$"
+
+    def get_two_stage_date_validation_sql(
+        self,
+        column: str,
+        format_pattern: str,
+        table_name: str,
+        filter_condition: Optional[str] = None,
+    ) -> tuple[str, str]:
+        """Generate two-stage date validation SQL for PostgreSQL
+
+        Returns:
+            tuple: (stage1_sql, stage2_candidates_sql)
+        """
+        regex_pattern = self._format_pattern_to_regex(format_pattern)
+
+        # Stage 1: Count regex failures
+        # Cast column for regex operations to handle integer columns
+        cast_column = self.cast_column_for_regex(column)
+        where_clause = (
+            f"WHERE {column} IS NOT NULL AND {cast_column} !~ '{regex_pattern}'"
+        )
+        if filter_condition:
+            where_clause += f" AND ({filter_condition})"
+
+        stage1_sql = (
+            f"SELECT COUNT(1) as regex_failed_count "
+            f"FROM {table_name} {where_clause}"
+        )
+
+        # Stage 2: Get potential valid candidates for Python validation
+        candidates_where = (
+            f"WHERE {column} IS NOT NULL AND {cast_column} ~ '{regex_pattern}'"
+        )
+        if filter_condition:
+            candidates_where += f" AND ({filter_condition})"
+
+        stage2_sql = (
+            f"SELECT DISTINCT {column} FROM {table_name} {candidates_where} LIMIT 10000"
+        )
+
+        return stage1_sql, stage2_sql
+
+    def _normalize_format_pattern(self, format_pattern: str) -> str:
+        """Normalize format pattern for Python datetime validation"""
+        # Handle both case variations (YYYY/yyyy, MM/mm, etc.)
+        pattern_map = {
+            "YYYY": "%Y",
+            "yyyy": "%Y",
+            "MM": "%m",
+            "mm": "%m",
+            "DD": "%d",
+            "dd": "%d",
+            "HH": "%H",
+            "hh": "%H",
+            "MI": "%M",
+            "mi": "%M",
+            "SS": "%S",
+            "ss": "%S",
+        }
+
+        normalized = format_pattern
+        # Sort by length (descending) to avoid partial replacements
+        for fmt in sorted(pattern_map.keys(), key=len, reverse=True):
+            normalized = normalized.replace(fmt, pattern_map[fmt])
+
+        return normalized
 
     def cast_column_for_regex(self, column: str) -> str:
         """Cast column to text for regex operations in PostgreSQL"""
@@ -699,22 +803,16 @@ class SQLiteDialect(DatabaseDialect):
         return f"{column} LIKE '{pattern}' COLLATE NOCASE"
 
     def get_date_clause(self, column: str, format_pattern: str) -> str:
-        """SQLite uses strftime for date formatting"""
-        fmt_map = {
-            "yyyy": "%Y",
-            "MM": "%m",
-            "dd": "%d",
-            "HH": "%H",
-            "mm": "%M",
-            "ss": "%S",
-        }
-        for k, v in fmt_map.items():
-            format_pattern = format_pattern.replace(k, v)
-        return f"strftime('{format_pattern}', {column})"
+        """SQLite uses custom function for date validation"""
+        # Use custom function for date validation
+        return (
+            f"CASE WHEN IS_VALID_DATE({column}, '{format_pattern}') THEN 'valid' "
+            f"ELSE NULL END"
+        )
 
     def is_supported_date_format(self) -> bool:
-        """SQLite does not support date formats"""
-        return False
+        """SQLite supports date formats with custom functions"""
+        return True
 
     def get_date_functions(self) -> Dict[str, str]:
         """Get SQLite date functions"""
@@ -841,6 +939,31 @@ class SQLiteDialect(DatabaseDialect):
     def can_use_custom_functions(self) -> bool:
         """SQLite supports custom functions"""
         return True
+
+    def _normalize_format_pattern(self, format_pattern: str) -> str:
+        """Normalize format pattern to support both case variations"""
+        # Handle both case variations (YYYY/yyyy, MM/mm, etc.)
+        pattern_map = {
+            "YYYY": "%Y",
+            "yyyy": "%Y",
+            "MM": "%m",
+            "mm": "%m",
+            "DD": "%d",
+            "dd": "%d",
+            "HH": "%H",
+            "hh": "%H",
+            "MI": "%M",
+            "mi": "%M",
+            "SS": "%S",
+            "ss": "%S",
+        }
+
+        normalized = format_pattern
+        # Sort by length (descending) to avoid partial replacements
+        for fmt in sorted(pattern_map.keys(), key=len, reverse=True):
+            normalized = normalized.replace(fmt, pattern_map[fmt])
+
+        return normalized
 
 
 class SQLServerDialect(DatabaseDialect):
