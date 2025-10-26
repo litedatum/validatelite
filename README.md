@@ -142,7 +142,7 @@ vlite check --conn "mysql://user:pass@host/db" --table customers \
 
 ## Learn More
 
-- **[Usage Guide (docs/usage.md)](docs/usage.md)**: Learn about all commands, data sources, rule types, and advanced features like the **Desired Type** system.
+- **[Usage Guide (docs/USAGE.md)](docs/USAGE.md)**: Learn about all commands, data sources, rule types, and advanced features like the **Desired Type** system.
 - **[Configuration Reference (docs/CONFIG_REFERENCE.md)](docs/CONFIG_REFERENCE.md)**: See how to configure the tool via `toml` files.
 - **[Contributing Guide (CONTRIBUTING.md)](CONTRIBUTING.md)**: We welcome contributions!
 
